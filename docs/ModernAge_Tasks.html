@@ -1,0 +1,531 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="utf-8">
+<title>عصري حداثة — وثيقة المتطلبات وتقسيم المهام</title>
+<style>
+  @page { size: A4; margin: 2.2cm 2cm; }
+  body {
+    font-family: "Segoe UI", "Tahoma", "Arial", sans-serif;
+    direction: rtl; text-align: right; color: #222; line-height: 1.7;
+    font-size: 12pt;
+  }
+  /* الغلاف */
+  .cover { text-align: center; padding-top: 120px; }
+  .cover .badge { color:#0E7C66; font-size: 14pt; letter-spacing: 2px; font-weight:bold; }
+  .cover h1 { font-size: 40pt; color:#1F3A5F; margin: 8px 0 0 0; }
+  .cover .sub { font-size: 18pt; color:#0E7C66; margin-top: 6px; }
+  .cover .meta { margin-top: 40px; font-size: 12pt; color:#555; }
+  .cover .rule { width: 60%; margin: 24px auto; border: 0; border-top: 3px solid #0E7C66; }
+  .pagebreak { page-break-before: always; }
+
+  h2 {
+    color: #fff; background: #1F3A5F; padding: 8px 14px; font-size: 16pt;
+    margin-top: 26px; border-right: 6px solid #0E7C66;
+  }
+  h3 { color: #1F3A5F; font-size: 13.5pt; margin: 18px 0 6px 0; border-bottom: 2px solid #E2E8F0; padding-bottom: 4px; }
+  h4 { color: #0E7C66; font-size: 12.5pt; margin: 14px 0 4px 0; }
+  p { margin: 6px 0; }
+  ul { margin: 6px 24px 10px 0; padding: 0; }
+  li { margin: 3px 0; }
+
+  table { width: 100%; border-collapse: collapse; margin: 10px 0 18px 0; font-size: 11pt; }
+  th, td { border: 1px solid #B9C4D4; padding: 7px 9px; vertical-align: top; text-align: right; }
+  th { background: #1F3A5F; color: #fff; font-weight: bold; }
+  tr:nth-child(even) td { background: #F4F7FB; }
+
+  /* جداول المهام */
+  .tasks th { background: #0E7C66; }
+  .tasks td.id { font-weight: bold; color: #1F3A5F; white-space: nowrap; text-align:center; }
+  .tasks td.center { text-align: center; white-space: nowrap; }
+  .crit { color:#555; font-size: 10.5pt; }
+  .crit b { color:#0E7C66; }
+
+  .legend span { display:inline-block; padding:2px 10px; border-radius: 10px; color:#fff; font-size:10.5pt; margin-left:6px; }
+  .p-high { background:#C0392B; }
+  .p-mid  { background:#D98A00; }
+  .p-low  { background:#5A6B7B; }
+
+  .note { background:#FFF8E6; border-right:5px solid #D98A00; padding:10px 14px; margin:12px 0; }
+  .phase-tag { color:#0E7C66; font-weight:bold; }
+  .toc li { margin: 4px 0; }
+  .small { font-size: 10.5pt; color:#666; }
+</style>
+</head>
+<body>
+
+<!-- ===================== الغلاف ===================== -->
+<div class="cover">
+  <div class="badge">APPLICATION · MOBILE</div>
+  <h1>عَصري حَداثة</h1>
+  <div class="sub">ModernAge</div>
+  <hr class="rule">
+  <div style="font-size:17pt; color:#1F3A5F; font-weight:bold;">وثيقة المتطلبات وتقسيم المهام</div>
+  <div style="font-size:12pt; color:#666;">Software Requirements &amp; Task Breakdown</div>
+  <div class="meta">
+    إعداد للفريق البرمجي &nbsp;•&nbsp; الإصدار 1.0<br>
+    التاريخ: 2026-06-14
+  </div>
+</div>
+
+<!-- ===================== جدول المحتويات ===================== -->
+<div class="pagebreak"></div>
+<h2>المحتويات</h2>
+<ol class="toc">
+  <li>نظرة عامة على المشروع</li>
+  <li>الأنظمة الأساسية الثلاثة</li>
+  <li>الأدوار والصلاحيات</li>
+  <li>خارطة الطريق (المراحل)</li>
+  <li>تقسيم العمل إلى مهام (Tasks)</li>
+  <li>نموذج البيانات المقترح (Firestore)</li>
+  <li>المتطلبات غير الوظيفية</li>
+  <li>توجيهات الفريق ومعايير الإنجاز</li>
+</ol>
+
+<!-- ===================== 1. نظرة عامة ===================== -->
+<div class="pagebreak"></div>
+<h2>1. نظرة عامة على المشروع</h2>
+<p>
+  <b>«عصري حداثة»</b> تطبيق موبايل لإدارة أعمال شركة تصميم وتنفيذ، يجمع ثلاثة أنظمة في منصة واحدة:
+  <b>نظام محاسبي</b>، و<b>نظام تسجيل دخول وصلاحيات</b>، و<b>نظام إدارة مهام</b>. الهدف ربط دورة العمل
+  بالكامل — من إنشاء المشروع لدى الإدارة، مروراً بعمل موظفي التصميم والتنفيذ، وصولاً إلى متابعة الزبون لمشروعه لحظياً.
+</p>
+<p>
+  تتحكم <b>الإدارة (Admin)</b> بكل شيء عبر لوحة تحكم حصرية: تضيف الزبائن والمشاريع، وتوزّع العمل بين قسمي
+  <b>التصميم</b> و<b>التنفيذ</b>، وتتابع التقارير اليومية وسجلات الحضور والوصولات المالية. ويرى الزبون كل ما يخص
+  مشروعه في بوابة خاصة به.
+</p>
+<div class="note">
+  <b>نقطة الانطلاق:</b> نبدأ بوحدة واحدة فقط — <b>المصادقة + لوحة تحكم الأدمن</b> (المرحلة 1) — ثم نبني بقية
+  الوحدات تباعاً كما هو موضّح في خارطة الطريق.
+</div>
+
+<!-- ===================== 2. الأنظمة الثلاثة ===================== -->
+<h2>2. الأنظمة الأساسية الثلاثة</h2>
+<h3>أ) نظام تسجيل الدخول والصلاحيات</h3>
+<ul>
+  <li>تسجيل دخول لكل دور (أدمن / مصمم / موظف تنفيذ / زبون) مع توجيه تلقائي للواجهة المناسبة.</li>
+  <li>إنشاء حسابات الموظفين من قبل الأدمن <b>حصراً</b> (لا يوجد تسجيل ذاتي).</li>
+  <li>دخول موظف التنفيذ مقيّد بالموقع الجغرافي (داخل موقع العمل فقط).</li>
+</ul>
+<h3>ب) نظام إدارة المهام</h3>
+<ul>
+  <li>المشروع نوعان: <b>تصميم</b> أو <b>تنفيذ</b>، ولكل نوع مسار وشاشات خاصة.</li>
+  <li>موظف التصميم يضيف مهامه بنفسه مع تقدير الأيام، ويحدّد «العرض الموالي للزبون».</li>
+  <li>نظام بصمة (حضور/انصراف) وتقارير يومية لكل موظف.</li>
+</ul>
+<h3>ج) النظام المحاسبي</h3>
+<ul>
+  <li>موظف التنفيذ يُصدر «وصل إلكتروني» عند دفع أي مبلغ.</li>
+  <li>الوصل يُخزَّن في قاعدة البيانات ويظهر فوراً في صفحة الزبون وفي لوحة التحكم.</li>
+  <li>ملخص مالي لكل مشروع/زبون داخل لوحة التحكم.</li>
+</ul>
+
+<!-- ===================== 3. الأدوار ===================== -->
+<h2>3. الأدوار والصلاحيات</h2>
+<table>
+  <tr><th>الدور</th><th>طريقة الدخول</th><th>الصلاحيات الرئيسية</th></tr>
+  <tr>
+    <td><b>المدير (Admin)</b></td>
+    <td>حساب يُنشأ مسبقاً</td>
+    <td>لوحة التحكم الحصرية: إضافة الزبائن والمشاريع، إنشاء حسابات الموظفين، تحديد نوع المشروع وموقعه، ومتابعة كل التقارير والحضور والوصولات.</td>
+  </tr>
+  <tr>
+    <td><b>موظف التصميم</b></td>
+    <td>اسم مستخدم/كلمة مرور يصدرها الأدمن</td>
+    <td>عرض مهامه، إضافة مهام وملاحظات وتقدير أيام، تحديد العرض الموالي، البصمة، والتقرير اليومي.</td>
+  </tr>
+  <tr>
+    <td><b>موظف التنفيذ</b></td>
+    <td>دخول مقيّد بالموقع (Geofence)</td>
+    <td>عرض مشاريعه، إصدار وصل إلكتروني، البصمة، والتقرير اليومي.</td>
+  </tr>
+  <tr>
+    <td><b>الزبون</b></td>
+    <td>رقم الهاتف (رمز/OTP)</td>
+    <td>عرض تفاصيل مشروعه: التقدم، المهام، العرض الموالي، الوصولات والمدفوعات، والتقارير ذات الصلة. (قراءة فقط)</td>
+  </tr>
+</table>
+
+<!-- ===================== 4. خارطة الطريق ===================== -->
+<h2>4. خارطة الطريق (المراحل)</h2>
+<table>
+  <tr><th>المرحلة</th><th>المحتوى</th><th>الناتج</th></tr>
+  <tr><td class="center">0</td><td>التأسيس والإعداد</td><td>قاعدة بيانات + نموذج بيانات + ثيم + تنقّل</td></tr>
+  <tr><td class="center">1 ⭐</td><td>المصادقة + لوحة تحكم الأدمن</td><td>إنشاء الزبائن والمشاريع وتوزيع العمل</td></tr>
+  <tr><td class="center">2</td><td>وحدة التصميم + الحضور + التقارير</td><td>مسار عمل المصمم كاملاً</td></tr>
+  <tr><td class="center">3</td><td>وحدة التنفيذ + النظام المحاسبي</td><td>الدخول بالموقع + الوصولات الإلكترونية</td></tr>
+  <tr><td class="center">4</td><td>بوابة الزبون + الصقل والاختبار</td><td>تجربة الزبون + لوحة تقارير شاملة</td></tr>
+</table>
+<p class="small">⭐ نقطة البداية المتفق عليها مع العميل.</p>
+
+<!-- ===================== 5. المهام ===================== -->
+<div class="pagebreak"></div>
+<h2>5. تقسيم العمل إلى مهام (Tasks)</h2>
+<p class="legend">
+  الأولوية:
+  <span class="p-high">عالية</span>
+  <span class="p-mid">متوسطة</span>
+  <span class="p-low">منخفضة</span>
+  &nbsp; — التقدير بوحدة «أيام عمل تقريبية».
+</p>
+
+<h3>المرحلة 0 — التأسيس</h3>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-0.1</td>
+    <td><b>تهيئة المشروع وقاعدة البيانات</b><br>تفعيل Firebase (Auth, Firestore, Storage) وربطه بالتطبيق.
+      <div class="crit"><b>القبول:</b> التطبيق يتصل بالخدمات بنجاح، وبيئتا اختبار/إنتاج جاهزتان.</div></td>
+    <td>Backend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-0.2</td>
+    <td><b>تصميم نموذج البيانات</b><br>تعريف المجموعات: users, customers, projects, tasks, attendance, reports, receipts.
+      <div class="crit"><b>القبول:</b> مخطط موثّق للحقول والعلاقات (انظر القسم 6).</div></td>
+    <td>Lead</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-0.3</td>
+    <td><b>الهوية البصرية والثيم</b><br>ألوان وشعار «عصري حداثة»، خطوط عربية، دعم RTL كامل.
+      <div class="crit"><b>القبول:</b> ثيم موحّد قابل لإعادة الاستخدام في كل الشاشات.</div></td>
+    <td>UI</td><td class="center">متوسطة</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-0.4</td>
+    <td><b>التنقّل والصلاحيات الأساسية</b><br>توجيه حسب الدور (Role-based routing) وبنية المشروع.
+      <div class="crit"><b>القبول:</b> كل دور يُوجَّه لواجهته الصحيحة بعد الدخول.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+</table>
+
+<h3>المرحلة 1 — المصادقة + لوحة تحكم الأدمن <span class="phase-tag">(نبدأ هنا)</span></h3>
+<h4>المصادقة</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-1.1</td>
+    <td><b>شاشة تسجيل الدخول الموحّدة</b><br>دخول الأدمن والمصمم وموظف التنفيذ.
+      <div class="crit"><b>القبول:</b> تحقق صحيح من البيانات ورسائل خطأ واضحة بالعربية.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.2</td>
+    <td><b>منطق الأدوار والتوجيه</b><br>بعد الدخول: أدمن→لوحة التحكم، مصمم→شاشة التصميم، تنفيذ→شاشة التنفيذ، زبون→بوابة الزبون.
+      <div class="crit"><b>القبول:</b> لا يمكن لأي دور الوصول لشاشات دور آخر.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.3</td>
+    <td><b>إنشاء حسابات الموظفين (أدمن فقط)</b><br>لا تسجيل ذاتي؛ الأدمن ينشئ حساب الموظف ويحدد دوره.
+      <div class="crit"><b>القبول:</b> لا توجد أي واجهة تسجيل عامة؛ الإنشاء من اللوحة فقط.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.4</td>
+    <td><b>وصول الزبون عبر رقم الهاتف</b><br>دخول الزبون برقمه عبر رمز/OTP يصدره النظام أو الأدمن.
+      <div class="crit"><b>القبول:</b> الزبون يرى مشاريعه هو فقط.</div></td>
+    <td>Full-stack</td><td class="center">متوسطة</td><td class="center">2</td>
+  </tr>
+</table>
+<h4>لوحة تحكم الأدمن</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-1.5</td>
+    <td><b>الصفحة الرئيسية للوحة التحكم</b><br>لوحة معلومات: عدد المشاريع، المهام النشطة، آخر التقارير والوصولات.
+      <div class="crit"><b>القبول:</b> الأرقام تُحدّث من قاعدة البيانات لحظياً وبتنظيم واضح.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.6</td>
+    <td><b>إضافة زبون جديد</b><br>رقم الهاتف + الاسم + بيانات التواصل.
+      <div class="crit"><b>القبول:</b> منع تكرار رقم الهاتف، وحفظ ناجح في قاعدة البيانات.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.7</td>
+    <td><b>إنشاء مشروع وربطه بزبون</b><br>اختيار النوع: <b>تصميم</b> أو <b>تنفيذ</b>، وعنوان المشروع.
+      <div class="crit"><b>القبول:</b> اختيار النوع يفتح الحقول المناسبة له (T-1.8 / T-1.9).</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.8</td>
+    <td><b>مشروع «تصميم»: ملاحظات المتطلبات</b><br>حقل ملاحظات (مثال: «المطلوب تصميم 6 بوستات»).
+      <div class="crit"><b>القبول:</b> الملاحظات تظهر لاحقاً للمصمم وللزبون.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.9</td>
+    <td><b>مشروع «تنفيذ»: تحديد موقع العمل</b><br>إحداثيات الموقع + نطاق السماح بالحضور (Geofence).
+      <div class="crit"><b>القبول:</b> الموقع يُستخدم لاحقاً لتقييد دخول موظف التنفيذ (T-3.1).</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.10</td>
+    <td><b>إدارة الموظفين</b><br>إضافة/تعطيل، تعيين الدور (مصمم/تنفيذ)، وربط موظف التنفيذ بموقع.
+      <div class="crit"><b>القبول:</b> قائمة الموظفين قابلة للبحث، والتعطيل يمنع الدخول فوراً.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-1.11</td>
+    <td><b>عرض كل المشاريع وحالتها</b><br>قائمة شاملة مع بحث وفلترة حسب النوع/الزبون/الحالة.
+      <div class="crit"><b>القبول:</b> الضغط على مشروع يفتح تفاصيله الكاملة.</div></td>
+    <td>Frontend</td><td class="center">متوسطة</td><td class="center">2</td>
+  </tr>
+</table>
+
+<div class="pagebreak"></div>
+<h3>المرحلة 2 — وحدة التصميم + الحضور + التقارير</h3>
+<h4>وحدة التصميم</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-2.1</td>
+    <td><b>شاشة مهام المصمم</b><br>قائمة المشاريع/المهام المسندة للمصمم.
+      <div class="crit"><b>القبول:</b> تعرض المشاريع المرتبطة به فقط وحالتها.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.2</td>
+    <td><b>تفاصيل المشروع</b><br>عند الضغط على اسم المشروع تظهر تفاصيله وملاحظات الأدمن.
+      <div class="crit"><b>القبول:</b> عرض كامل للمتطلبات + قائمة المهام الحالية.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.3</td>
+    <td><b>إضافة مهام ذاتية (مع عدد الأيام)</b><br>المصمم يضيف مهامه بنفسه (مثال: «تصميم البوست الأول — 3 أيام»، «البوست الثالث — يومان»).
+      <div class="crit"><b>القبول:</b> كل مهمة لها عنوان + عدد أيام + حالة (قيد العمل/منجزة).</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.4</td>
+    <td><b>إضافة ملاحظات على المشروع</b><br>ملاحظات حرة من المصمم.
+      <div class="crit"><b>القبول:</b> تُحفظ مع ختم زمني واسم الكاتب.</div></td>
+    <td>Frontend</td><td class="center">متوسطة</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.5</td>
+    <td><b>«العرض الموالي للزبون»</b><br>حقل لموعد/تفاصيل التسليم القادم للزبون.
+      <div class="crit"><b>القبول:</b> يظهر للمصمم وللزبون في بوابته.</div></td>
+    <td>Frontend</td><td class="center">متوسطة</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.6</td>
+    <td><b>الجدول الزمني التلقائي</b><br>حساب المدة الإجمالية من مجموع أيام المهام.
+      <div class="crit"><b>القبول:</b> يتحدّث تلقائياً عند إضافة/حذف مهمة.</div></td>
+    <td>Frontend</td><td class="center">منخفضة</td><td class="center">1</td>
+  </tr>
+</table>
+<h4>الحضور (البصمة)</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-2.7</td>
+    <td><b>زر الدخول لنظام البصمة</b><br>من شاشة الموظف (تصميم/تنفيذ).
+      <div class="crit"><b>القبول:</b> زر واضح يفتح شاشة الحضور.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.8</td>
+    <td><b>تسجيل حضور/انصراف بالبصمة</b><br>توثيق بيومتري (بصمة الجهاز) مع ختم زمني.
+      <div class="crit"><b>القبول:</b> تمييز واضح بين حضور وانصراف ومنع التكرار الخاطئ.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.9</td>
+    <td><b>تخزين وعرض سجلات الحضور</b><br>حفظ السجلات وعرضها للأدمن في اللوحة.
+      <div class="crit"><b>القبول:</b> الأدمن يرى حضور كل موظف بالتاريخ والوقت.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+</table>
+<h4>التقارير اليومية</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-2.10</td>
+    <td><b>نموذج التقرير اليومي</b><br>الموظف يكتب ماذا أنجز اليوم بالتفصيل.
+      <div class="crit"><b>القبول:</b> تقرير واحد على الأقل لكل يوم عمل مرتبط بالموظف.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.11</td>
+    <td><b>حفظ التقارير وربطها</b><br>ربط التقرير بالموظف والمشروع والتاريخ.
+      <div class="crit"><b>القبول:</b> إمكانية استرجاع تقارير موظف/مشروع حسب الفترة.</div></td>
+    <td>Backend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-2.12</td>
+    <td><b>عرض التقارير في لوحة التحكم</b><br>الأدمن يطّلع على كل التقارير منظّمة.
+      <div class="crit"><b>القبول:</b> فلترة حسب الموظف/المشروع/التاريخ.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+</table>
+
+<div class="pagebreak"></div>
+<h3>المرحلة 3 — وحدة التنفيذ + النظام المحاسبي</h3>
+<h4>وحدة التنفيذ</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-3.1</td>
+    <td><b>دخول مقيّد بالموقع</b><br>موظف التنفيذ لا يسجّل الدخول/الحضور إلا من داخل موقع العمل (GPS/Geofence).
+      <div class="crit"><b>القبول:</b> خارج النطاق يُرفض الدخول مع رسالة واضحة.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">3</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.2</td>
+    <td><b>شاشة موظف التنفيذ</b><br>مشاريعه + الحضور + التقارير.
+      <div class="crit"><b>القبول:</b> تعرض مشاريعه فقط مع وصول سريع للوصل والتقرير.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.3</td>
+    <td><b>التقرير والبصمة لموظف التنفيذ</b><br>إعادة استخدام وحدتي الحضور والتقارير (2.7–2.12).
+      <div class="crit"><b>القبول:</b> نفس السلوك دون تكرار للكود.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+</table>
+<h4>النظام المحاسبي (الوصولات)</h4>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-3.4</td>
+    <td><b>إضافة وصل إلكتروني</b><br>داخل المشروع: عند دفع مبلغ يُدخل (المبلغ + الوصف + مرفق/صورة + التاريخ).
+      <div class="crit"><b>القبول:</b> تحقّق من المبلغ، وحفظ ناجح مع المرفق.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.5</td>
+    <td><b>رفع الوصل إلى قاعدة البيانات</b><br>بيانات الوصل في Firestore والصورة في Storage.
+      <div class="crit"><b>القبول:</b> رابط الصورة محفوظ ومقروء حسب الصلاحية.</div></td>
+    <td>Backend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.6</td>
+    <td><b>ظهور الوصل لدى الزبون والأدمن</b><br>الوصل يظهر تلقائياً في بوابة الزبون وفي لوحة التحكم.
+      <div class="crit"><b>القبول:</b> التحديث فوري دون إعادة تشغيل.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.7</td>
+    <td><b>السجل المحاسبي للمشروع</b><br>إجمالي المدفوعات + قائمة الوصولات للمشروع.
+      <div class="crit"><b>القبول:</b> المجاميع صحيحة وتتطابق مع الوصولات.</div></td>
+    <td>Full-stack</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.8</td>
+    <td><b>ملخص مالي في اللوحة</b><br>إجماليات لكل مشروع/زبون.
+      <div class="crit"><b>القبول:</b> عرض مرتّب وسهل القراءة.</div></td>
+    <td>Frontend</td><td class="center">متوسطة</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-3.9</td>
+    <td><b>طباعة/تصدير وصل PDF</b><br>توليد نسخة PDF للوصل (الحزمتان pdf/printing متوفرتان).
+      <div class="crit"><b>القبول:</b> ملف PDF صحيح قابل للمشاركة.</div></td>
+    <td>Frontend</td><td class="center">منخفضة</td><td class="center">1</td>
+  </tr>
+</table>
+
+<h3>المرحلة 4 — بوابة الزبون + الصقل</h3>
+<table class="tasks">
+  <tr><th>المعرّف</th><th>المهمة ومعايير القبول</th><th>المسؤول</th><th>الأولوية</th><th>أيام</th></tr>
+  <tr>
+    <td class="id">T-4.1</td>
+    <td><b>بوابة الزبون</b><br>عرض مشاريعه وكل التفاصيل (تصميم/تنفيذ).
+      <div class="crit"><b>القبول:</b> الزبون يرى بياناته هو فقط، بقراءة فقط.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-4.2</td>
+    <td><b>تقدّم التصميم والعرض الموالي</b><br>عرض المهام وحالتها وموعد العرض القادم.
+      <div class="crit"><b>القبول:</b> يطابق ما أدخله المصمم.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-4.3</td>
+    <td><b>الوصولات والمدفوعات للزبون</b><br>عرض كل الوصولات والإجمالي.
+      <div class="crit"><b>القبول:</b> يطابق سجل التنفيذ المحاسبي.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-4.4</td>
+    <td><b>التقارير ذات الصلة للزبون</b><br>عرض تقارير مشروعه المسموح بها.
+      <div class="crit"><b>القبول:</b> لا تظهر بيانات مشاريع أخرى.</div></td>
+    <td>Frontend</td><td class="center">متوسطة</td><td class="center">1</td>
+  </tr>
+  <tr>
+    <td class="id">T-4.5</td>
+    <td><b>الإشعارات</b><br>تنبيه عند وصل جديد/تقرير/تحديث مهم.
+      <div class="crit"><b>القبول:</b> وصول الإشعار للطرف المعني.</div></td>
+    <td>Full-stack</td><td class="center">متوسطة</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-4.6</td>
+    <td><b>لوحة تقارير شاملة</b><br>تجميع كل التقارير والحضور والمالية في اللوحة بشكل مرتّب.
+      <div class="crit"><b>القبول:</b> كل شيء واضح وسهل الفهم وقابل للفلترة.</div></td>
+    <td>Frontend</td><td class="center">عالية</td><td class="center">2</td>
+  </tr>
+  <tr>
+    <td class="id">T-4.7</td>
+    <td><b>المراجعة والاختبار والأمان</b><br>اختبار على هاتف فعلي، ضبط الأداء، وتشديد قواعد Firestore/Storage.
+      <div class="crit"><b>القبول:</b> لا أخطاء حرجة، وكل دور يصل لبياناته فقط.</div></td>
+    <td>QA/Lead</td><td class="center">عالية</td><td class="center">3</td>
+  </tr>
+</table>
+
+<!-- ===================== 6. نموذج البيانات ===================== -->
+<div class="pagebreak"></div>
+<h2>6. نموذج البيانات المقترح (Firestore)</h2>
+<p class="small">مقترح مبدئي قابل للتعديل من فريق الـ Backend.</p>
+<table>
+  <tr><th>المجموعة (Collection)</th><th>أهم الحقول</th></tr>
+  <tr><td><b>users</b></td><td>uid، name، role (admin/designer/execution)، phone، active، siteId (لموظف التنفيذ)</td></tr>
+  <tr><td><b>customers</b></td><td>id، name، phone، createdBy، createdAt</td></tr>
+  <tr><td><b>projects</b></td><td>id، title، customerId، type (design/execution)، notes، siteLocation (lat,lng,radius)، status، assignedTo، nextPresentation</td></tr>
+  <tr><td><b>tasks</b></td><td>id، projectId، title، days، status، createdBy، createdAt</td></tr>
+  <tr><td><b>attendance</b></td><td>id، userId، type (in/out)، timestamp، location (للتنفيذ)</td></tr>
+  <tr><td><b>reports</b></td><td>id، userId، projectId، date، content</td></tr>
+  <tr><td><b>receipts</b></td><td>id، projectId، amount، description، imageUrl، createdBy، createdAt</td></tr>
+</table>
+
+<!-- ===================== 7. غير الوظيفية ===================== -->
+<h2>7. المتطلبات غير الوظيفية</h2>
+<ul>
+  <li><b>اللغة والاتجاه:</b> واجهة عربية بالكامل بدعم RTL.</li>
+  <li><b>المنصات:</b> Android أولاً (اختبار على هاتف فعلي)، مع بنية تسمح بـ iOS لاحقاً.</li>
+  <li><b>الأمان:</b> قواعد Firestore/Storage تمنع كل دور من بيانات غيره؛ الزبون قراءة فقط.</li>
+  <li><b>الموثوقية:</b> رسائل خطأ واضحة، وتأكيد العمليات الحساسة (حذف/دفع).</li>
+  <li><b>الأداء:</b> تحميل سريع للقوائم وتحديث لحظي عند تغيّر البيانات.</li>
+</ul>
+
+<!-- ===================== 8. توجيهات الفريق ===================== -->
+<h2>8. توجيهات الفريق ومعايير الإنجاز</h2>
+<h3>تعريف «الإنجاز» (Definition of Done)</h3>
+<ul>
+  <li>المهمة تعمل وفق «معايير القبول» المذكورة، ومختبَرة على هاتف فعلي.</li>
+  <li>الكود نظيف ومنظّم، وأسماء واضحة، وبدون تكرار غير ضروري.</li>
+  <li>الواجهة عربية وRTL وتتبع الثيم الموحّد.</li>
+  <li>تمت مراجعة الكود (Code Review) قبل الدمج.</li>
+</ul>
+<h3>تنظيم العمل</h3>
+<ul>
+  <li><b>ابدأ بالمرحلة 1</b> (المصادقة + لوحة التحكم) قبل أي شيء آخر — هي أساس بقية الوحدات.</li>
+  <li>أنجز المهام بترتيب التبعيات: لا تبدأ مهمة قبل اكتمال ما تعتمد عليه.</li>
+  <li>استخدم Git مع فرع لكل مهمة (branch per task) باسم المعرّف، مثال: <span class="small">feature/T-1.7-create-project</span>.</li>
+  <li>أبلغ فوراً عن أي غموض في المتطلبات بدل الافتراض.</li>
+</ul>
+<h3>توزيع مقترح للأدوار البرمجية</h3>
+<table>
+  <tr><th>الدور</th><th>المسؤولية</th></tr>
+  <tr><td>Lead / Backend</td><td>نموذج البيانات، قواعد الأمان، التكاملات، مراجعة الكود.</td></tr>
+  <tr><td>Frontend (Flutter)</td><td>الشاشات، الثيم، التنقّل، ربط البيانات.</td></tr>
+  <tr><td>QA</td><td>الاختبار على هاتف فعلي وتوثيق الملاحظات.</td></tr>
+</table>
+
+<p class="small" style="margin-top:30px; text-align:center; color:#888;">
+  — نهاية الوثيقة — تطبيق «عصري حداثة» · الإصدار 1.0 —
+</p>
+
+</body>
+</html>

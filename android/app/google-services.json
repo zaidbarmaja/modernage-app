@@ -1,0 +1,29 @@
+{
+  "project_info": {
+    "project_number": "675551759018",
+    "project_id": "mohmeed-kadim",
+    "storage_bucket": "mohmeed-kadim.firebasestorage.app"
+  },
+  "client": [
+    {
+      "client_info": {
+        "mobilesdk_app_id": "1:675551759018:android:77f2319446e8b0e88c9ed3",
+        "android_client_info": {
+          "package_name": "modernage.online"
+        }
+      },
+      "oauth_client": [],
+      "api_key": [
+        {
+          "current_key": "AIzaSyBr6YHokKloPEwvNbCcAJH3UeUnOjirc08"
+        }
+      ],
+      "services": {
+        "appinvite_service": {
+          "other_platform_oauth_client": []
+        }
+      }
+    }
+  ],
+  "configuration_version": "1"
+}

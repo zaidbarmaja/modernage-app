@@ -1,13 +1,13 @@
 {
   "project_info": {
-    "project_number": "675551759018",
-    "project_id": "mohmeed-kadim",
-    "storage_bucket": "mohmeed-kadim.firebasestorage.app"
+    "project_number": "366025976353",
+    "project_id": "modren-48a9c",
+    "storage_bucket": "modren-48a9c.firebasestorage.app"
   },
   "client": [
     {
       "client_info": {
-        "mobilesdk_app_id": "1:675551759018:android:77f2319446e8b0e88c9ed3",
+        "mobilesdk_app_id": "1:366025976353:android:9634894369deec5b625160",
         "android_client_info": {
           "package_name": "modernage.online"
         }
@@ -15,7 +15,7 @@
       "oauth_client": [],
       "api_key": [
         {
-          "current_key": "AIzaSyBr6YHokKloPEwvNbCcAJH3UeUnOjirc08"
+          "current_key": "AIzaSyDZcliV1QFiqhCjQC4wnrR1bwsXg32kuAc"
         }
       ],
       "services": {

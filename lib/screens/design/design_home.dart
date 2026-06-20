@@ -27,7 +27,7 @@ class _DesignHomeState extends State<DesignHome> {
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      AttendanceView(user: widget.user),
+      AttendanceTab(user: widget.user),
       _ProjectsTab(user: widget.user),
       DailyReportsView(user: widget.user),
     ];

@@ -1,11 +1,11 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../models/app_notification.dart';
 import '../../models/app_user.dart';
 import '../../models/execution_report.dart';
-import '../../models/expense.dart';
 import '../../models/receipt.dart';
 import '../../models/site_checkin.dart';
 import '../../models/work_site.dart';
@@ -13,7 +13,6 @@ import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
 import '../../widgets/execution_widgets.dart';
 import '../../widgets/ui.dart';
-import 'expense_form.dart';
 import 'receipt_detail_screen.dart';
 import 'receipt_form.dart';
 import 'report_form.dart';
@@ -35,7 +34,7 @@ class SiteDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 4,
+      length: 3,
       child: Scaffold(
         appBar: AppBar(
           title: Text(site.siteName.isEmpty ? site.ownerName : site.siteName),
@@ -48,7 +47,6 @@ class SiteDetailScreen extends StatelessWidget {
               Tab(text: 'دخول الموقع', icon: Icon(Icons.location_on)),
               Tab(text: 'التقارير', icon: Icon(Icons.assignment)),
               Tab(text: 'الوصولات', icon: Icon(Icons.receipt_long)),
-              Tab(text: 'المصاريف', icon: Icon(Icons.payments)),
             ],
           ),
         ),
@@ -63,8 +61,6 @@ class SiteDetailScreen extends StatelessWidget {
                   _ReportsTab(
                       site: site, user: user, interactive: interactive),
                   _ReceiptsTab(
-                      site: site, user: user, interactive: interactive),
-                  _ExpensesTab(
                       site: site, user: user, interactive: interactive),
                 ],
               ),
@@ -97,20 +93,59 @@ class _SiteHeader extends StatelessWidget {
             children: [
               const Icon(Icons.person, color: AppColors.cream, size: 20),
               const SizedBox(width: 6),
-              Text('صاحب المشروع: ${site.ownerName}',
-                  style: const TextStyle(
-                      color: AppColors.cream, fontWeight: FontWeight.bold)),
+              Expanded(
+                child: Text('صاحب المشروع: ${site.ownerName}',
+                    style: const TextStyle(
+                        color: AppColors.cream, fontWeight: FontWeight.bold)),
+              ),
+              if (site.category.isPools)
+                Container(
+                  padding:
+                      const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  decoration: BoxDecoration(
+                    color: Colors.black.withValues(alpha: 0.18),
+                    borderRadius: BorderRadius.circular(20),
+                  ),
+                  child: Row(
+                    mainAxisSize: MainAxisSize.min,
+                    children: [
+                      Icon(site.category.icon,
+                          color: AppColors.cream, size: 14),
+                      const SizedBox(width: 4),
+                      Text(site.category.labelAr,
+                          style: const TextStyle(
+                              color: AppColors.cream,
+                              fontSize: 11,
+                              fontWeight: FontWeight.bold)),
+                    ],
+                  ),
+                ),
             ],
           ),
           if (site.address.isNotEmpty) ...[
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.place, color: Color(0xFFE9E3CF), size: 18),
+                const Icon(Icons.place, color: Color(0xFFE6EAF0), size: 18),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(site.address,
-                      style: const TextStyle(color: Color(0xFFE9E3CF))),
+                      style: const TextStyle(color: Color(0xFFE6EAF0))),
+                ),
+              ],
+            ),
+          ],
+          if (site.executorsLabel.isNotEmpty) ...[
+            const SizedBox(height: 6),
+            Row(
+              children: [
+                const Icon(Icons.engineering,
+                    color: Color(0xFFE6EAF0), size: 18),
+                const SizedBox(width: 6),
+                Expanded(
+                  child: Text(
+                      '${site.executorCount > 1 ? 'المنفّذون' : 'المنفّذ'}: ${site.executorsLabel}',
+                      style: const TextStyle(color: Color(0xFFE6EAF0))),
                 ),
               ],
             ),
@@ -118,7 +153,7 @@ class _SiteHeader extends StatelessWidget {
           if (site.durationDays != null) ...[
             const SizedBox(height: 6),
             Text('مدة التنفيذ المتوقعة: ${site.durationDays} يوم',
-                style: const TextStyle(color: Color(0xFFE9E3CF))),
+                style: const TextStyle(color: Color(0xFFE6EAF0))),
           ],
         ],
       ),
@@ -142,10 +177,29 @@ class _CheckinTabState extends State<_CheckinTab> {
   final _fs = FirestoreService();
   bool _busy = false;
 
+  static const _gpsToleranceM = 25; // سماحية دقّة GPS
+
   Future<void> _checkIn() async {
     setState(() => _busy = true);
     try {
       final loc = await LocationService.getCurrentLocation();
+      // T-3.1: تقييد دخول الموقع جغرافياً — يُرفض الدخول من خارج نطاق الموقع.
+      final s = widget.site;
+      if (s.lat != null && s.lng != null) {
+        final d =
+            LocationService.distanceMeters(loc.lat, loc.lng, s.lat!, s.lng!);
+        final allowed = s.radius + _gpsToleranceM;
+        if (d > allowed) {
+          if (mounted) {
+            showSnack(
+                context,
+                'أنت خارج نطاق الموقع — تبعد ${d.round()} م والمسموح ${allowed.round()} م. '
+                'اقترب من موقع العمل لتسجيل الدخول.',
+                error: true);
+          }
+          return; // لا يُسجَّل الدخول خارج النطاق
+        }
+      }
       final now = DateTime.now();
       await _fs.addSiteCheckin(SiteCheckin(
         id: '',
@@ -407,87 +461,3 @@ class _ReceiptTile extends StatelessWidget {
   }
 }
 
-/// تبويب السلف والصرفيات.
-class _ExpensesTab extends StatelessWidget {
-  final WorkSite site;
-  final AppUser user;
-  final bool interactive;
-  const _ExpensesTab(
-      {required this.site, required this.user, required this.interactive});
-
-  @override
-  Widget build(BuildContext context) {
-    final fs = FirestoreService();
-    return Column(
-      children: [
-        if (interactive)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: () => Navigator.push(
-                  context,
-                  MaterialPageRoute(
-                      builder: (_) =>
-                          ExpenseForm(site: site, executor: user)),
-                ),
-                icon: const Icon(Icons.add),
-                label: const Text('إضافة سلفة / صرفية'),
-              ),
-            ),
-          ),
-        Expanded(
-          child: StreamBuilder<List<Expense>>(
-            stream: fs.expensesBySite(site.id),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const LoadingView();
-              }
-              final items = snapshot.data ?? [];
-              num advances = 0, spending = 0;
-              for (final e in items) {
-                if (e.type == ExpenseType.advance) {
-                  advances += e.amount;
-                } else {
-                  spending += e.amount;
-                }
-              }
-              return ListView(
-                padding: const EdgeInsets.all(12),
-                children: [
-                  SectionCard(
-                    title: 'الإجمالي',
-                    icon: Icons.summarize,
-                    child: Column(
-                      children: [
-                        InfoRow(
-                            label: 'إجمالي السلف',
-                            value: Fmt.money(advances),
-                            valueColor: AppColors.warning),
-                        InfoRow(
-                            label: 'إجمالي الصرفيات',
-                            value: Fmt.money(spending),
-                            valueColor: AppColors.danger),
-                        InfoRow(
-                            label: 'المجموع',
-                            value: Fmt.money(advances + spending)),
-                      ],
-                    ),
-                  ),
-                  const SizedBox(height: 8),
-                  if (items.isEmpty)
-                    const EmptyState(
-                        message: 'لا توجد سلف أو صرفيات بعد.',
-                        icon: Icons.money_off)
-                  else
-                    ...items.map((e) => ExpenseTile(expense: e)),
-                ],
-              );
-            },
-          ),
-        ),
-      ],
-    );
-  }
-}

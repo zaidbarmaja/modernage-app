@@ -131,6 +131,10 @@ class FsCollections {
   static const expenses = 'expenses'; // السلف والصرفيات
   static const receipts = 'receipts'; // الوصولات الإلكترونية (المدفوعات)
   static const notifications = 'notifications';
+  static const settings = 'settings'; // إعدادات الشركة (مستند company)
+  // بيانات اعتماد كلمة المرور (تجزئة + ملح) — منفصلة عن ملف المستخدم كي لا
+  // يقرأها الطاقم؛ لا تُحمَّل في نموذج AppUser إطلاقاً.
+  static const credentials = 'credentials';
 }
 
 /// يوم العطلة الأسبوعية (الجمعة) — DateTime.friday == 5.
@@ -151,4 +155,52 @@ const List<String> kProjectStatuses = [
   'قيد العمل',
   'منجز',
   'معلّق',
+];
+
+/// تصنيف عمل التنفيذ: تنفيذ عام، أو أحد قسمي المسابح (إشراف/تنفيذ).
+/// يُسنَد للموظف وللموقع لتنظيم قسم تنفيذ المسابح ضمن وحدة التنفيذ.
+enum WorkCategory {
+  general, // تنفيذ عام
+  poolsSupervision, // إشراف مسابح
+  poolsExecution, // تنفيذ مسابح
+}
+
+extension WorkCategoryX on WorkCategory {
+  String get id => name;
+
+  String get labelAr {
+    switch (this) {
+      case WorkCategory.general:
+        return 'تنفيذ عام';
+      case WorkCategory.poolsSupervision:
+        return 'إشراف مسابح';
+      case WorkCategory.poolsExecution:
+        return 'تنفيذ مسابح';
+    }
+  }
+
+  /// هل التصنيف ضمن قسم المسابح؟
+  bool get isPools => this != WorkCategory.general;
+
+  IconData get icon {
+    switch (this) {
+      case WorkCategory.general:
+        return Icons.engineering;
+      case WorkCategory.poolsSupervision:
+        return Icons.visibility;
+      case WorkCategory.poolsExecution:
+        return Icons.pool;
+    }
+  }
+
+  static WorkCategory fromId(String? value) => WorkCategory.values.firstWhere(
+        (c) => c.name == value,
+        orElse: () => WorkCategory.general,
+      );
+}
+
+/// أقسام المسابح فقط (للاختيار حين يكون العمل ضمن المسابح).
+const List<WorkCategory> kPoolsCategories = [
+  WorkCategory.poolsSupervision,
+  WorkCategory.poolsExecution,
 ];

@@ -99,8 +99,10 @@ class _RegisterScreenState extends State<RegisterScreen> {
                 TextFormField(
                   controller: _password,
                   obscureText: _obscure,
+                  keyboardType: TextInputType.number,
+                  textDirection: TextDirection.ltr,
                   decoration: InputDecoration(
-                    labelText: 'كلمة المرور',
+                    labelText: 'رمز الدخول — 4 أرقام',
                     prefixIcon: const Icon(Icons.lock_outline),
                     suffixIcon: IconButton(
                       icon: Icon(_obscure
@@ -109,20 +111,26 @@ class _RegisterScreenState extends State<RegisterScreen> {
                       onPressed: () => setState(() => _obscure = !_obscure),
                     ),
                   ),
-                  validator: (v) => (v == null || v.length < 6)
-                      ? 'كلمة المرور 6 أحرف على الأقل'
-                      : null,
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.length != 4 || int.tryParse(t) == null) {
+                      return 'رمز الدخول 4 أرقام';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _confirm,
                   obscureText: _obscure,
+                  keyboardType: TextInputType.number,
+                  textDirection: TextDirection.ltr,
                   decoration: const InputDecoration(
-                    labelText: 'تأكيد كلمة المرور',
+                    labelText: 'تأكيد الرمز',
                     prefixIcon: Icon(Icons.lock_reset),
                   ),
                   validator: (v) =>
-                      v != _password.text ? 'كلمتا المرور غير متطابقتين' : null,
+                      v != _password.text ? 'الرمز غير متطابق' : null,
                 ),
                 const SizedBox(height: 26),
                 ElevatedButton.icon(

@@ -73,8 +73,8 @@ class _ReceiptFormState extends State<ReceiptForm> {
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
+    var imageUrl = '';
     try {
-      var imageUrl = '';
       if (_image != null) {
         imageUrl = await _storage.uploadXFile(_image!,
             folder: 'receipts/${widget.site.id}');
@@ -94,22 +94,29 @@ class _ReceiptFormState extends State<ReceiptForm> {
         createdByName: widget.executor.name,
         date: _date,
       ));
-      // إشعار للإدارة بوصل جديد.
-      await _fs.addNotification(AppNotification(
-        id: '',
-        type: 'receipt',
-        title: 'وصل جديد: ${Fmt.money(amount)}',
-        body:
-            '${widget.executor.name} أصدر وصلاً بقيمة ${Fmt.money(amount)} لموقع ${widget.site.ownerName}',
-        fromUid: widget.executor.uid,
-        fromName: widget.executor.name,
-        relatedId: widget.site.id,
-      ));
+      // إشعار بوصل جديد موجّه للزبون المعني (والإدارة ترى كل الإشعارات) — T-4.5.
+      // لا نُنشئ إشعاراً بلا مستلِم إن لم يكن الموقع مربوطاً بزبون.
+      final customerUid = widget.site.customerUid ?? '';
+      if (customerUid.isNotEmpty) {
+        await _fs.addNotification(AppNotification(
+          id: '',
+          type: 'receipt',
+          title: 'وصل جديد: ${Fmt.money(amount)}',
+          body:
+              '${widget.executor.name} أصدر وصلاً بقيمة ${Fmt.money(amount)} لموقع ${widget.site.ownerName}',
+          fromUid: widget.executor.uid,
+          fromName: widget.executor.name,
+          toUid: customerUid,
+          relatedId: widget.site.id,
+        ));
+      }
       if (mounted) {
         showSnack(context, 'تم إصدار الوصل ✓');
         Navigator.pop(context);
       }
     } catch (_) {
+      // فشلت الكتابة بعد رفع الصورة: احذفها كي لا تبقى يتيمة في Storage.
+      if (imageUrl.isNotEmpty) await _storage.deleteByUrl(imageUrl);
       if (mounted) showSnack(context, 'تعذّر إصدار الوصل.', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);

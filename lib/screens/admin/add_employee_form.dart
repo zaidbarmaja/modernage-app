@@ -25,16 +25,19 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
   late final TextEditingController _phone;
   late final TextEditingController _password;
 
-  UserRole _role = UserRole.designEmployee;
-  Department _department = Department.civil;
-  TimeOfDay _start = const TimeOfDay(hour: 8, minute: 0);
-  TimeOfDay _end = const TimeOfDay(hour: 16, minute: 0);
+  UserRole _role = UserRole.executionEmployee;
+  Department _department = Department.none; // محفوظ من التعديل (لا يُختار الآن)
+  WorkCategory _category = WorkCategory.general; // قسم التنفيذ (عام/مسابح)
+  // أوقات الدوام اختيارية (null = غير محدّدة) — المهمة #4.
+  TimeOfDay? _start;
+  TimeOfDay? _end;
   bool _busy = false;
   bool _obscure = true;
 
+  // المسميات الوظيفية الثلاثة حصراً (المهمة #4): تنفيذ / تصميم / محاسب.
   static const _roles = [
-    UserRole.designEmployee,
     UserRole.executionEmployee,
+    UserRole.designEmployee,
     UserRole.accounting,
   ];
 
@@ -53,10 +56,15 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
     _password = TextEditingController();
     if (e != null) {
       _role = e.role;
-      _department =
-          e.department == Department.none ? Department.civil : e.department;
-      _start = TimeOfDay(hour: e.workStartMin ~/ 60, minute: e.workStartMin % 60);
-      _end = TimeOfDay(hour: e.workEndMin ~/ 60, minute: e.workEndMin % 60);
+      _department = e.department;
+      _category = e.workCategory;
+      _start = e.workStartMin != null
+          ? TimeOfDay(
+              hour: e.workStartMin! ~/ 60, minute: e.workStartMin! % 60)
+          : null;
+      _end = e.workEndMin != null
+          ? TimeOfDay(hour: e.workEndMin! ~/ 60, minute: e.workEndMin! % 60)
+          : null;
     }
   }
 
@@ -72,10 +80,12 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
-    final dept = _needsSchedule ? _department : Department.none;
-    final startMin = _needsSchedule ? _toMin(_start) : 8 * 60;
-    final endMin = _needsSchedule ? _toMin(_end) : 16 * 60;
-    if (_needsSchedule && endMin <= startMin) {
+    // أوقات الدوام اختيارية: تُحفظ فقط إن حدّدها المدير، وإلا تبقى null.
+    final int? startMin =
+        _needsSchedule && _start != null ? _toMin(_start!) : null;
+    final int? endMin =
+        _needsSchedule && _end != null ? _toMin(_end!) : null;
+    if (startMin != null && endMin != null && endMin <= startMin) {
       showSnack(context, 'وقت نهاية الدوام يجب أن يكون بعد البداية.', error: true);
       return;
     }
@@ -86,9 +96,14 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
           'name': _name.text.trim(),
           'phone': _phone.text.trim(),
           'role': _role.id,
-          'department': dept.id,
-          'workStartMin': startMin,
-          'workEndMin': endMin,
+          'department': _department.id,
+          'workCategory':
+              (_role == UserRole.executionEmployee ? _category : WorkCategory.general)
+                  .id,
+          // نكتب أوقات الدوام فقط للأدوار التي تحتاج جدولاً، وإلا نُبقي القيم
+          // المخزّنة كما هي بدل محوها عند التبديل لدور بلا دوام.
+          if (_needsSchedule) 'workStartMin': startMin,
+          if (_needsSchedule) 'workEndMin': endMin,
           'loginNames':
               _auth.loginKeys(_name.text.trim(), _phone.text.trim()),
         });
@@ -98,7 +113,10 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
           username: _name.text.trim(),
           password: _password.text,
           role: _role,
-          department: dept,
+          department: _department,
+          workCategory: _role == UserRole.executionEmployee
+              ? _category
+              : WorkCategory.general,
           workStartMin: startMin,
           workEndMin: endMin,
           phone: _phone.text.trim(),
@@ -155,9 +173,11 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
                   TextFormField(
                     controller: _password,
                     obscureText: _obscure,
+                    keyboardType: TextInputType.number,
+                    textDirection: TextDirection.ltr,
                     decoration: InputDecoration(
-                      labelText: 'كلمة المرور (لدخول الموظف)',
-                      helperText: 'يدخل الموظف باسمه أعلاه وكلمة المرور هذه',
+                      labelText: 'رمز الدخول — 4 أرقام',
+                      helperText: 'يدخل الموظف باسمه أعلاه وهذا الرمز',
                       prefixIcon: const Icon(Icons.lock_outline),
                       suffixIcon: IconButton(
                         icon: Icon(_obscure
@@ -166,9 +186,13 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
                         onPressed: () => setState(() => _obscure = !_obscure),
                       ),
                     ),
-                    validator: (v) => (v == null || v.length < 6)
-                        ? 'كلمة المرور 6 أحرف على الأقل'
-                        : null,
+                    validator: (v) {
+                      final t = (v ?? '').trim();
+                      if (t.length != 4 || int.tryParse(t) == null) {
+                        return 'رمز الدخول 4 أرقام';
+                      }
+                      return null;
+                    },
                   ),
                 const SizedBox(height: 14),
                 DropdownButtonFormField<UserRole>(
@@ -176,43 +200,74 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
                   isExpanded: true,
                   dropdownColor: AppColors.surfaceAlt,
                   decoration: const InputDecoration(
-                    labelText: 'الوظيفة',
+                    labelText: 'القسم / الوظيفة',
                     prefixIcon: Icon(Icons.work_outline),
                   ),
-                  items: _roles
+                  // عند التعديل نضمّ الدور الحالي حتى لو لم يكن من الأدوار الثلاثة
+                  // (مثلاً زبون/أدمن) لتفادي تعطّل القائمة بقيمة غير موجودة.
+                  items: (<UserRole>{..._roles, if (_isEdit) _role}.toList())
                       .map((r) =>
                           DropdownMenuItem(value: r, child: Text(r.labelAr)))
                       .toList(),
                   onChanged: (v) => setState(() => _role = v ?? _role),
                 ),
-                if (_needsSchedule) ...[
+                if (_role == UserRole.executionEmployee) ...[
                   const SizedBox(height: 14),
-                  DropdownButtonFormField<Department>(
-                    initialValue: _department,
+                  DropdownButtonFormField<WorkCategory>(
+                    initialValue: _category,
                     isExpanded: true,
                     dropdownColor: AppColors.surfaceAlt,
                     decoration: const InputDecoration(
-                      labelText: 'القسم (تصنيف)',
-                      prefixIcon: Icon(Icons.category_outlined),
+                      labelText: 'قسم التنفيذ',
+                      prefixIcon: Icon(Icons.account_tree_outlined),
                     ),
-                    items: const [Department.civil, Department.architectural]
-                        .map((d) =>
-                            DropdownMenuItem(value: d, child: Text(d.labelAr)))
+                    items: WorkCategory.values
+                        .map((c) => DropdownMenuItem(
+                              value: c,
+                              child: Row(
+                                children: [
+                                  Icon(c.icon,
+                                      size: 18, color: AppColors.oliveBright),
+                                  const SizedBox(width: 8),
+                                  Text(c.labelAr),
+                                ],
+                              ),
+                            ))
                         .toList(),
                     onChanged: (v) =>
-                        setState(() => _department = v ?? _department),
+                        setState(() => _category = v ?? _category),
                   ),
-                  const SizedBox(height: 14),
+                ],
+                if (_needsSchedule) ...[
+                  const SizedBox(height: 18),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text('أوقات الدوام (اختياري)',
+                        style: TextStyle(
+                            color: AppColors.cream,
+                            fontWeight: FontWeight.bold)),
+                  ),
+                  const SizedBox(height: 6),
+                  const Align(
+                    alignment: Alignment.centerRight,
+                    child: Text(
+                        'اتركها فارغة الآن إن لم تُحدَّد بعد (يُعتمد دوام افتراضي).',
+                        style: TextStyle(
+                            color: AppColors.creamDim, fontSize: 12)),
+                  ),
+                  const SizedBox(height: 10),
                   Row(
                     children: [
                       Expanded(
                         child: _timeButton('بداية الدوام', _start,
-                            (t) => setState(() => _start = t)),
+                            (t) => setState(() => _start = t),
+                            () => setState(() => _start = null)),
                       ),
                       const SizedBox(width: 10),
                       Expanded(
                         child: _timeButton('نهاية الدوام', _end,
-                            (t) => setState(() => _end = t)),
+                            (t) => setState(() => _end = t),
+                            () => setState(() => _end = null)),
                       ),
                     ],
                   ),
@@ -237,21 +292,32 @@ class _AddEmployeeFormState extends State<AddEmployeeForm> {
     );
   }
 
-  Widget _timeButton(
-      String label, TimeOfDay value, ValueChanged<TimeOfDay> onPick) {
+  Widget _timeButton(String label, TimeOfDay? value,
+      ValueChanged<TimeOfDay> onPick, VoidCallback onClear) {
     return InkWell(
       onTap: () async {
-        final picked =
-            await showTimePicker(context: context, initialTime: value);
+        final picked = await showTimePicker(
+            context: context,
+            initialTime: value ?? const TimeOfDay(hour: 8, minute: 0));
         if (picked != null) onPick(picked);
       },
       child: InputDecorator(
         decoration: InputDecoration(
           labelText: label,
           prefixIcon: const Icon(Icons.schedule),
+          suffixIcon: value == null
+              ? null
+              : IconButton(
+                  icon: const Icon(Icons.close, size: 18),
+                  tooltip: 'مسح',
+                  onPressed: onClear,
+                ),
         ),
-        child: Text(value.format(context),
-            style: const TextStyle(color: AppColors.cream)),
+        child: Text(
+          value == null ? 'غير محدّد' : value.format(context),
+          style: TextStyle(
+              color: value == null ? AppColors.creamDim : AppColors.cream),
+        ),
       ),
     );
   }

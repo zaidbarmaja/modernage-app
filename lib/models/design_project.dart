@@ -101,6 +101,16 @@ class DesignProject {
   int get doneTaskDays =>
       tasks.where((t) => t.done).fold(0, (acc, t) => acc + t.days);
 
+  /// نسبة إنجاز المشروع (0..100) من المهام المنجزة — بالأيام إن وُجدت، وإلا
+  /// بعدد المهام. تُرجع null إن لم تكن هناك مهام.
+  int? get progressPercent {
+    if (tasks.isEmpty) return null;
+    if (totalTaskDays > 0) {
+      return ((doneTaskDays / totalTaskDays) * 100).round();
+    }
+    return ((doneTasksCount / tasks.length) * 100).round();
+  }
+
   factory DesignProject.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
     return DesignProject(

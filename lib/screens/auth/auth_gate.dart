@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../../core/constants.dart';
 import '../../core/theme.dart';
+import '../../models/app_user.dart';
 import '../../services/auth_controller.dart';
 import 'login_screen.dart';
 import 'role_router.dart';
@@ -25,6 +27,10 @@ class AuthGate extends StatelessWidget {
       case AuthStatus.authenticated:
         final user = auth.appUser;
         if (user == null) return const SplashScreen();
+        if (auth.isImpersonating) {
+          return _ImpersonationShell(
+              user: user, child: RoleRouter(user: user));
+        }
         return RoleRouter(user: user);
       case AuthStatus.noProfile:
         return const _AccountIssueScreen(
@@ -52,6 +58,75 @@ class AuthGate extends StatelessWidget {
           showRetry: false,
         );
     }
+  }
+}
+
+/// غلاف يُظهر شريطاً علوياً أثناء انتحال الأدمن لحساب مستخدم، مع زر للعودة.
+/// شاشة المستخدم الأصلية تظهر كاملةً وتفاعليةً تحته.
+class _ImpersonationShell extends StatelessWidget {
+  final AppUser user;
+  final Widget child;
+  const _ImpersonationShell({required this.user, required this.child});
+
+  @override
+  Widget build(BuildContext context) {
+    final name = user.name.isEmpty ? user.phone : user.name;
+    return Scaffold(
+      backgroundColor: AppColors.background,
+      body: SafeArea(
+        bottom: false,
+        child: Column(
+          children: [
+            // شريط نحيف أنيق بألوان التطبيق يدمج مع الهيدر بدل لافتة برتقالية.
+            Material(
+              color: AppColors.oliveDark,
+              child: Container(
+                decoration: const BoxDecoration(
+                  border: Border(
+                    bottom:
+                        BorderSide(color: AppColors.oliveBright, width: 1),
+                  ),
+                ),
+                padding: const EdgeInsets.fromLTRB(12, 3, 4, 3),
+                child: Row(
+                  children: [
+                    const Icon(Icons.visibility_outlined,
+                        color: AppColors.cream, size: 15),
+                    const SizedBox(width: 6),
+                    Expanded(
+                      child: Text(
+                        'تتصفّح كَ $name • ${user.role.labelAr}',
+                        maxLines: 1,
+                        overflow: TextOverflow.ellipsis,
+                        style: const TextStyle(
+                            color: AppColors.cream,
+                            fontWeight: FontWeight.w600,
+                            fontSize: 12),
+                      ),
+                    ),
+                    TextButton.icon(
+                      style: TextButton.styleFrom(
+                        foregroundColor: AppColors.cream,
+                        padding: const EdgeInsets.symmetric(horizontal: 8),
+                        minimumSize: const Size(0, 30),
+                        tapTargetSize: MaterialTapTargetSize.shrinkWrap,
+                      ),
+                      onPressed: () =>
+                          context.read<AuthController>().stopImpersonating(),
+                      icon: const Icon(Icons.exit_to_app, size: 16),
+                      label: const Text('عودة',
+                          style: TextStyle(
+                              fontSize: 12, fontWeight: FontWeight.bold)),
+                    ),
+                  ],
+                ),
+              ),
+            ),
+            Expanded(child: child),
+          ],
+        ),
+      ),
+    );
   }
 }
 

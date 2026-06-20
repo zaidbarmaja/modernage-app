@@ -47,7 +47,7 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
               child: Column(
                 children: [
                   const Text('المبلغ المدفوع',
-                      style: TextStyle(color: Color(0xFFE9E3CF))),
+                      style: TextStyle(color: Color(0xFFE6EAF0))),
                   const SizedBox(height: 6),
                   Text(Fmt.money(r.amount),
                       style: const TextStyle(

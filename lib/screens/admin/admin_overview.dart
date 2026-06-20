@@ -5,7 +5,6 @@ import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../models/design_project.dart';
 import '../../models/execution_report.dart';
-import '../../models/expense.dart';
 import '../../models/receipt.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/ui.dart';
@@ -71,11 +70,12 @@ class AdminOverview extends StatelessWidget {
           stream: fs.allProjects(),
           builder: (context, snap) {
             final projects = snap.data ?? const <DesignProject>[];
-            num total = 0, paid = 0;
+            num total = 0, paid = 0, remaining = 0;
             var active = 0;
             for (final p in projects) {
               total += p.totalAmount;
               paid += p.paidAmount;
+              remaining += p.remainingAmount; // مقصور على ≥0 لكل مشروع
               if (p.remainingAmount > 0) active++;
             }
             return SectionCard(
@@ -104,7 +104,7 @@ class AdminOverview extends StatelessWidget {
                       icon: Icons.price_check,
                       color: AppColors.success),
                   StatTile(
-                      value: Fmt.money(total - paid),
+                      value: Fmt.money(remaining),
                       label: 'المتبقي',
                       icon: Icons.account_balance,
                       color: AppColors.warning),
@@ -183,28 +183,6 @@ class AdminOverview extends StatelessWidget {
             return Column(children: reports.map(_reportTile).toList());
           },
         ),
-        const SizedBox(height: 12),
-
-        // ---- آخر الصرفيات/السلف ----
-        _sectionTitle('آخر السلف والصرفيات'),
-        StreamBuilder<List<Expense>>(
-          stream: fs.allExpenses(),
-          builder: (context, snap) {
-            if (snap.connectionState == ConnectionState.waiting) {
-              return const Padding(
-                padding: EdgeInsets.all(16),
-                child: LoadingView(),
-              );
-            }
-            final expenses = (snap.data ?? const <Expense>[]).take(4);
-            if (expenses.isEmpty) {
-              return const EmptyState(
-                  message: 'لا توجد حركات مالية بعد.',
-                  icon: Icons.receipt_long);
-            }
-            return Column(children: expenses.map(_expenseTile).toList());
-          },
-        ),
       ],
     );
   }
@@ -253,25 +231,6 @@ class AdminOverview extends StatelessWidget {
         ),
       );
 
-  Widget _expenseTile(Expense e) => Card(
-        child: ListTile(
-          leading: Icon(
-            e.type == ExpenseType.advance
-                ? Icons.account_balance_wallet_outlined
-                : Icons.shopping_cart_outlined,
-            color: e.type == ExpenseType.advance
-                ? AppColors.warning
-                : AppColors.oliveBright,
-          ),
-          title: Text('${e.type.labelAr}: ${Fmt.money(e.amount)}',
-              style: const TextStyle(
-                  color: AppColors.cream, fontWeight: FontWeight.bold)),
-          subtitle: Text(
-            '${e.siteName.isEmpty ? '—' : e.siteName} • ${Fmt.date(e.date)}',
-            style: const TextStyle(color: AppColors.creamDim),
-          ),
-        ),
-      );
 }
 
 /// مربع عدّاد لحظي يقرأ طول قائمة من Stream.

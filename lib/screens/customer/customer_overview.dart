@@ -9,7 +9,8 @@ import '../../services/firestore_service.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/site_card.dart';
 import '../../widgets/ui.dart';
-import '../execution/site_detail_screen.dart';
+import '../design/design_project_detail.dart';
+import 'customer_site_screen.dart';
 
 /// عرض شامل لزبون: الميزانية + مشاريع التصميم + مواقع التنفيذ.
 /// يُستخدم في صفحة الزبون نفسه وفي درج المحاسبة.
@@ -93,7 +94,17 @@ class CustomerOverview extends StatelessWidget {
                       message: 'لا توجد مشاريع تصميم مرتبطة.',
                       icon: Icons.architecture)
                 else
-                  ...projects.map((p) => ProjectCard(project: p)),
+                  ...projects.map((p) => ProjectCard(
+                        project: p,
+                        // الزبون يفتح التفاصيل الكاملة للقراءة فقط (T-4.1/T-4.2).
+                        onTap: () => Navigator.push(
+                          context,
+                          MaterialPageRoute(
+                            builder: (_) => DesignProjectDetail(
+                                projectId: p.id, canEdit: false),
+                          ),
+                        ),
+                      )),
               ],
             );
           },
@@ -114,16 +125,19 @@ class CustomerOverview extends StatelessWidget {
                   message: 'لا توجد مواقع تنفيذ مرتبطة.',
                   icon: Icons.location_city);
             }
+            // الزبون يرى بطاقات مواقعه (المالك/العنوان/المنفّذ). تفاصيل الموقع
+            // التشغيلية للطاقم فقط؛ بيانات الزبون (وصولاته/تقاريره) في تبويباته.
             return Column(
               children: sites
                   .map((s) => SiteCard(
                         site: s,
                         showExecutor: true,
+                        // الزبون يفتح تقدّم موقعه وتقاريره وصوره (قراءة فقط).
                         onTap: () => Navigator.push(
                           context,
                           MaterialPageRoute(
-                            builder: (_) => SiteDetailScreen(
-                                site: s, user: viewer, interactive: false),
+                            builder: (_) => CustomerSiteScreen(
+                                site: s, customerUid: customerUid),
                           ),
                         ),
                       ))

@@ -59,7 +59,9 @@ class DesignProjectDetail extends StatelessWidget {
           }
           final remDays = p.remainingDays;
           return ListView(
-            padding: const EdgeInsets.all(14),
+            // حافة سفلية تراعي شريط تنقّل النظام كي لا يختفي زرّ «تعديل المشروع».
+            padding: EdgeInsets.fromLTRB(
+                14, 14, 14, 14 + MediaQuery.of(context).viewPadding.bottom),
             children: [
               PageHeader(
                 title: p.ownerName.isEmpty ? 'مشروع تصميم' : p.ownerName,
@@ -211,6 +213,7 @@ class DesignProjectDetail extends StatelessWidget {
 
   Widget _taskTile(BuildContext context, DesignProject p, int i) {
     final t = p.tasks[i];
+    final (remText, remColor) = _taskRemaining(p, i);
     return ListTile(
       dense: true,
       contentPadding: EdgeInsets.zero,
@@ -229,16 +232,117 @@ class DesignProjectDetail extends StatelessWidget {
           decoration: t.done ? TextDecoration.lineThrough : null,
         ),
       ),
-      subtitle: Text('${t.days} يوم',
-          style: const TextStyle(color: AppColors.creamDim)),
+      subtitle: Row(
+        children: [
+          Text('المدة: ${t.days} يوم',
+              style: const TextStyle(color: AppColors.creamDim, fontSize: 12)),
+          if (remText.isNotEmpty) ...[
+            const Text('  •  ',
+                style: TextStyle(color: AppColors.creamDim, fontSize: 12)),
+            Text(remText,
+                style: TextStyle(
+                    color: remColor,
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600)),
+          ],
+        ],
+      ),
       trailing: canEdit
-          ? IconButton(
-              icon: const Icon(Icons.delete_outline,
-                  color: AppColors.creamDim, size: 20),
-              onPressed: () => _deleteTask(context, p, i),
+          ? Row(
+              mainAxisSize: MainAxisSize.min,
+              children: [
+                IconButton(
+                  tooltip: 'تعديل',
+                  icon: const Icon(Icons.edit_outlined,
+                      color: AppColors.creamDim, size: 19),
+                  onPressed: () => _editTask(context, p, i),
+                ),
+                IconButton(
+                  tooltip: 'حذف',
+                  icon: const Icon(Icons.delete_outline,
+                      color: AppColors.creamDim, size: 19),
+                  onPressed: () => _deleteTask(context, p, i),
+                ),
+              ],
             )
           : null,
     );
+  }
+
+  /// المدة المتبقّية للمهمة محسوبةً من تاريخ بدء المشروع + تسلسل أيام المهام
+  /// (المهام متتابعة). تعيد نصّاً ولوناً للعرض.
+  (String, Color) _taskRemaining(DesignProject p, int i) {
+    final t = p.tasks[i];
+    if (t.done) return ('✓ منجزة', AppColors.success);
+    if (p.createdAt == null) return ('', AppColors.creamDim);
+    var cumulative = 0;
+    for (var k = 0; k <= i; k++) {
+      cumulative += p.tasks[k].days;
+    }
+    final start =
+        DateTime(p.createdAt!.year, p.createdAt!.month, p.createdAt!.day);
+    final due = start.add(Duration(days: cumulative));
+    final now = DateTime.now();
+    final today = DateTime(now.year, now.month, now.day);
+    final remaining = due.difference(today).inDays;
+    if (remaining < 0) {
+      return ('متأخّرة ${-remaining} يوم', AppColors.danger);
+    }
+    if (remaining == 0) return ('تنتهي اليوم', AppColors.warning);
+    if (remaining <= 3) return ('متبقّي $remaining يوم', AppColors.warning);
+    return ('متبقّي $remaining يوم', AppColors.oliveBright);
+  }
+
+  Future<void> _editTask(BuildContext context, DesignProject p, int i) async {
+    final t = p.tasks[i];
+    final titleC = TextEditingController(text: t.title);
+    final daysC = TextEditingController(text: '${t.days}');
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title:
+            const Text('تعديل المهمة', style: TextStyle(color: AppColors.cream)),
+        content: Column(
+          mainAxisSize: MainAxisSize.min,
+          children: [
+            TextField(
+              controller: titleC,
+              autofocus: true,
+              style: const TextStyle(color: AppColors.cream),
+              decoration: const InputDecoration(labelText: 'عنوان المهمة'),
+            ),
+            const SizedBox(height: 12),
+            TextField(
+              controller: daysC,
+              keyboardType: TextInputType.number,
+              textDirection: TextDirection.ltr,
+              style: const TextStyle(color: AppColors.cream),
+              decoration: const InputDecoration(labelText: 'عدد الأيام'),
+            ),
+          ],
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: AppColors.creamDim))),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حفظ')),
+        ],
+      ),
+    );
+    if (ok == true && titleC.text.trim().isNotEmpty) {
+      final tasks = [...p.tasks];
+      tasks[i] = t.copyWith(
+        title: titleC.text.trim(),
+        days: int.tryParse(daysC.text.trim()) ?? 0,
+      );
+      await FirestoreService().updateProjectTasks(p.id, tasks);
+    }
+    titleC.dispose();
+    daysC.dispose();
   }
 
   Future<void> _toggleTask(DesignProject p, int i) async {
@@ -354,6 +458,12 @@ class DesignProjectDetail extends StatelessWidget {
               backgroundColor: AppColors.surfaceAlt,
               color: AppColors.success,
             ),
+          ),
+          const SizedBox(height: 6),
+          Text(
+            'المتبقّي: ${p.totalTaskDays - p.doneTaskDays} يوم عمل  '
+            '(${(ratio * 100).round()}% مكتمل)',
+            style: const TextStyle(color: AppColors.oliveBright, fontSize: 12),
           ),
         ],
       ),

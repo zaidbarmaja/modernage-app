@@ -147,6 +147,58 @@ class StatTile extends StatelessWidget {
   }
 }
 
+/// شريط نسبة إنجاز بعنوان ونسبة مئوية ولون يتدرّج مع التقدّم.
+class ProgressBar extends StatelessWidget {
+  final int percent; // 0..100
+  final String label;
+  final Color? color;
+
+  const ProgressBar({
+    super.key,
+    required this.percent,
+    this.label = 'نسبة الإنجاز',
+    this.color,
+  });
+
+  @override
+  Widget build(BuildContext context) {
+    final pct = percent.clamp(0, 100);
+    final c = color ??
+        (pct >= 100
+            ? AppColors.success
+            : pct >= 50
+                ? AppColors.oliveBright
+                : AppColors.warning);
+    return Column(
+      crossAxisAlignment: CrossAxisAlignment.start,
+      children: [
+        Row(
+          children: [
+            Expanded(
+              child: Text(label,
+                  style:
+                      const TextStyle(color: AppColors.creamDim, fontSize: 13)),
+            ),
+            Text('$pct%',
+                style: TextStyle(
+                    color: c, fontSize: 14, fontWeight: FontWeight.bold)),
+          ],
+        ),
+        const SizedBox(height: 6),
+        ClipRRect(
+          borderRadius: BorderRadius.circular(8),
+          child: LinearProgressIndicator(
+            value: pct / 100.0,
+            minHeight: 9,
+            backgroundColor: AppColors.surfaceAlt,
+            valueColor: AlwaysStoppedAnimation<Color>(c),
+          ),
+        ),
+      ],
+    );
+  }
+}
+
 /// حالة فارغة (لا توجد بيانات).
 class EmptyState extends StatelessWidget {
   final String message;
@@ -235,7 +287,7 @@ class PageHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(subtitle!,
                       style: const TextStyle(
-                          color: Color(0xFFE9E3CF), fontSize: 13)),
+                          color: Color(0xFFE6EAF0), fontSize: 13)),
                 ],
               ],
             ),

@@ -25,6 +25,7 @@ class _DailyReportFormState extends State<DailyReportForm> {
   late final TextEditingController _content;
   String? _projectId;
   String _projectName = '';
+  String? _customerUid; // زبون المشروع/الموقع المختار (لعزل بيانات الزبون)
   bool _busy = false;
 
   @override
@@ -33,6 +34,7 @@ class _DailyReportFormState extends State<DailyReportForm> {
     _content = TextEditingController(text: widget.existing?.content ?? '');
     _projectId = widget.existing?.projectId;
     _projectName = widget.existing?.projectName ?? '';
+    _customerUid = widget.existing?.customerUid;
   }
 
   @override
@@ -53,13 +55,14 @@ class _DailyReportFormState extends State<DailyReportForm> {
         content: _content.text.trim(),
         projectId: _projectId,
         projectName: _projectName,
+        customerUid: _customerUid,
       ));
       if (mounted) {
         showSnack(context, 'تم حفظ تقرير اليوم ✓');
         Navigator.pop(context);
       }
-    } catch (_) {
-      if (mounted) showSnack(context, 'تعذّر حفظ التقرير.', error: true);
+    } catch (e) {
+      if (mounted) showSnack(context, 'تعذّر حفظ التقرير: $e', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -113,9 +116,14 @@ class _DailyReportFormState extends State<DailyReportForm> {
             items: items,
             onChanged: (id) => setState(() {
               _projectId = id;
-              _projectName = id == null
-                  ? ''
-                  : _designLabel(projects.firstWhere((p) => p.id == id));
+              if (id == null) {
+                _projectName = '';
+                _customerUid = null;
+              } else {
+                final p = projects.firstWhere((p) => p.id == id);
+                _projectName = _designLabel(p);
+                _customerUid = p.customerUid;
+              }
             }),
           );
         },
@@ -152,8 +160,14 @@ class _DailyReportFormState extends State<DailyReportForm> {
             items: items,
             onChanged: (id) => setState(() {
               _projectId = id;
-              _projectName =
-                  id == null ? '' : _siteLabel(sites.firstWhere((s) => s.id == id));
+              if (id == null) {
+                _projectName = '';
+                _customerUid = null;
+              } else {
+                final s = sites.firstWhere((s) => s.id == id);
+                _projectName = _siteLabel(s);
+                _customerUid = s.customerUid;
+              }
             }),
           );
         },

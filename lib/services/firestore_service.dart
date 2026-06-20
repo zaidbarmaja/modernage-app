@@ -1,9 +1,12 @@
+import 'dart:async';
+
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
 import '../models/app_notification.dart';
 import '../models/app_user.dart';
 import '../models/attendance.dart';
+import '../models/company_settings.dart';
 import '../models/daily_report.dart';
 import '../models/design_project.dart';
 import '../models/execution_report.dart';
@@ -54,6 +57,57 @@ class FirestoreService {
     return (email is String && email.isNotEmpty) ? email : null;
   }
 
+  /// يجد ملف المستخدم كاملاً عبر مُعرّف دخول (اسم/هاتف) — لتحديد مسار الدخول
+  /// (Firestore أم Firebase Auth) قبل المصادقة. يرفض التطابق المتعدّد (يُرجع null)
+  /// كي لا يُحلّ مُعرّف ملتبس إلى حساب خاطئ.
+  Future<AppUser?> findUserByLogin(String identifier) async {
+    final raw = identifier.trim();
+    final norm = raw.toLowerCase().replaceAll(RegExp(r'\s+'), ' ');
+    final col = _col(FsCollections.users);
+    // نطلب حتى مستندين لكشف الالتباس؛ إن تطابق أكثر من حساب نرفض (null).
+    var snap =
+        await col.where('loginNames', arrayContains: norm).limit(2).get();
+    if (snap.docs.isEmpty) {
+      snap = await col.where('phone', isEqualTo: raw).limit(2).get();
+    }
+    if (snap.docs.isEmpty) {
+      snap = await col.where('username', isEqualTo: raw).limit(2).get();
+    }
+    if (snap.docs.isEmpty || snap.docs.length > 1) return null;
+    return AppUser.fromDoc(snap.docs.first);
+  }
+
+  // -------------------- بيانات اعتماد كلمة المرور (منفصلة) --------------------
+
+  /// يخزّن بيانات اعتماد كلمة المرور (ملح + تجزئة) في مجموعة منفصلة لا يقرأها
+  /// الطاقم — تُستخدم عند الإنشاء وعند إعادة الضبط.
+  Future<void> setCredential(String uid, String salt, String hash) =>
+      _col(FsCollections.credentials)
+          .doc(uid)
+          .set({'salt': salt, 'hash': hash});
+
+  /// يقرأ بيانات الاعتماد لمستخدم (للتحقّق من كلمة المرور عند الدخول).
+  Future<Map<String, String>?> getCredential(String uid) async {
+    final doc = await _col(FsCollections.credentials).doc(uid).get();
+    final m = doc.data();
+    if (m == null) return null;
+    final salt = m['salt'];
+    final hash = m['hash'];
+    if (salt is String && hash is String) {
+      return {'salt': salt, 'hash': hash};
+    }
+    return null;
+  }
+
+  /// إعادة المدير تعيين كلمة مرور حساب: يخزّن الاعتماد الجديد ويُفعّل مسار
+  /// كلمة مرور Firestore لهذا الحساب.
+  Future<void> setUserPassword(String uid, String salt, String hash) async {
+    await setCredential(uid, salt, hash);
+    await _col(FsCollections.users)
+        .doc(uid)
+        .update({'useFirestorePassword': true});
+  }
+
   Future<AppUser?> getUser(String uid) async {
     final doc = await _col(FsCollections.users).doc(uid).get();
     return doc.exists ? AppUser.fromDoc(doc) : null;
@@ -93,12 +147,19 @@ class FirestoreService {
         return list;
       });
 
-  /// تغيير دور المستخدم وقسمه (ترقية زبون إلى موظف مثلاً).
+  /// تغيير دور المستخدم وقسمه وتصنيف تنفيذه (ترقية زبون إلى موظف مثلاً).
+  /// يُطبّع التصنيف: لغير موظف التنفيذ يُضبط دائماً على "تنفيذ عام".
   Future<void> updateUserRole(
-          String uid, UserRole role, Department department) =>
-      _col(FsCollections.users)
-          .doc(uid)
-          .update({'role': role.id, 'department': department.id});
+          String uid, UserRole role, Department department,
+          {WorkCategory workCategory = WorkCategory.general}) =>
+      _col(FsCollections.users).doc(uid).update({
+        'role': role.id,
+        'department': department.id,
+        'workCategory': (role == UserRole.executionEmployee
+                ? workCategory
+                : WorkCategory.general)
+            .id,
+      });
 
   /// تحديث اسم ورقم هاتف المستخدم.
   Future<void> updateUserInfo(String uid, String name, String phone) =>
@@ -156,11 +217,18 @@ class FirestoreService {
       _col(FsCollections.attendance)
           .where('uid', isEqualTo: uid)
           .snapshots()
-          .map((s) {
-        final list = s.docs.map(AttendanceRecord.fromDoc).toList();
-        list.sort((a, b) => b.checkIn.compareTo(a.checkIn));
-        return list;
-      });
+          .map(_mapAttendance);
+
+  /// كل سجلات الحضور (للوحة التقارير الشاملة — T-4.6).
+  Stream<List<AttendanceRecord>> allAttendance() =>
+      _col(FsCollections.attendance).snapshots().map(_mapAttendance);
+
+  List<AttendanceRecord> _mapAttendance(
+      QuerySnapshot<Map<String, dynamic>> s) {
+    final list = s.docs.map(AttendanceRecord.fromDoc).toList();
+    list.sort((a, b) => b.checkIn.compareTo(a.checkIn));
+    return list;
+  }
 
   // --------------------------- مشاريع التصميم ---------------------------
 
@@ -226,10 +294,62 @@ class FirestoreService {
   Stream<List<WorkSite>> allSites() =>
       _col(FsCollections.sites).snapshots().map(_mapSites);
 
-  Stream<List<WorkSite>> sitesByExecutor(String uid) => _col(FsCollections.sites)
-      .where('executorUid', isEqualTo: uid)
-      .snapshots()
-      .map(_mapSites);
+  /// مواقع منفّذ معيّن — تدعم الإسناد لأكثر من موظف عبر `executorUids`، وتدمج
+  /// المواقع القديمة (التي تحوي `executorUid` مفرداً فقط) للتوافق الرجعي.
+  Stream<List<WorkSite>> sitesByExecutor(String uid) {
+    final byArray = _col(FsCollections.sites)
+        .where('executorUids', arrayContains: uid)
+        .snapshots();
+    final bySingle = _col(FsCollections.sites)
+        .where('executorUid', isEqualTo: uid)
+        .snapshots();
+    final controller = StreamController<List<WorkSite>>();
+    var a = <WorkSite>[];
+    var b = <WorkSite>[];
+    Object? errA, errB;
+    void emit() {
+      // مرّر الخطأ فقط إذا أخفق الفرعان معاً (وإلا تظهر بيانات الفرع السليم
+      // بدل التذبذب بين خطأ وبيانات عند فشل استعلام واحد فقط).
+      if (errA != null && errB != null) {
+        if (!controller.isClosed) controller.addError(errA!);
+        return;
+      }
+      final byId = <String, WorkSite>{};
+      for (final s in [...a, ...b]) {
+        byId[s.id] = s;
+      }
+      final list = byId.values.toList()
+        ..sort((x, y) => (y.createdAt ?? DateTime(2000))
+            .compareTo(x.createdAt ?? DateTime(2000)));
+      if (!controller.isClosed) controller.add(list);
+    }
+
+    final s1 = byArray.listen(
+        (snap) {
+          a = snap.docs.map(WorkSite.fromDoc).toList();
+          errA = null;
+          emit();
+        },
+        onError: (Object e, StackTrace st) {
+          errA = e;
+          emit();
+        });
+    final s2 = bySingle.listen(
+        (snap) {
+          b = snap.docs.map(WorkSite.fromDoc).toList();
+          errB = null;
+          emit();
+        },
+        onError: (Object e, StackTrace st) {
+          errB = e;
+          emit();
+        });
+    controller.onCancel = () async {
+      await s1.cancel();
+      await s2.cancel();
+    };
+    return controller.stream;
+  }
 
   Stream<List<WorkSite>> sitesByCustomer(String uid) => _col(FsCollections.sites)
       .where('customerUid', isEqualTo: uid)
@@ -257,6 +377,14 @@ class FirestoreService {
   Stream<List<ExecutionReport>> reportsByExecutor(String uid) =>
       _col(FsCollections.executionReports)
           .where('executorUid', isEqualTo: uid)
+          .snapshots()
+          .map(_mapReports);
+
+  /// تقارير التنفيذ التي يملكها زبون (استعلام مُقيَّد بـ customerUid حتى تسمح به
+  /// قواعد الأمان). الفلترة حسب الموقع تتم في الشاشة (لا فهرس مركّب مطلوب).
+  Stream<List<ExecutionReport>> reportsByCustomer(String customerUid) =>
+      _col(FsCollections.executionReports)
+          .where('customerUid', isEqualTo: customerUid)
           .snapshots()
           .map(_mapReports);
 
@@ -304,6 +432,14 @@ class FirestoreService {
   /// كل التقارير اليومية (للوحة الإدارة).
   Stream<List<DailyReport>> allDailyReports() =>
       _col(FsCollections.dailyReports).snapshots().map(_mapDailyReports);
+
+  /// تقارير مشاريع زبون معيّن (لبوابة الزبون — T-4.4)؛ يُرشّح بـ customerUid
+  /// مباشرةً فيعمل تحت قواعد الأمان ولا يقرأ تقارير غيره.
+  Stream<List<DailyReport>> dailyReportsByCustomer(String customerUid) =>
+      _col(FsCollections.dailyReports)
+          .where('customerUid', isEqualTo: customerUid)
+          .snapshots()
+          .map(_mapDailyReports);
 
   List<DailyReport> _mapDailyReports(QuerySnapshot<Map<String, dynamic>> s) {
     final list = s.docs.map(DailyReport.fromDoc).toList();
@@ -386,6 +522,47 @@ class FirestoreService {
   Stream<List<Receipt>> allReceipts() =>
       _col(FsCollections.receipts).snapshots().map(_mapReceipts);
 
+  Future<void> deleteReceipt(String id) =>
+      _col(FsCollections.receipts).doc(id).delete();
+
+  /// حذف موقع تنفيذ مع كل ما يتبعه (وصولات/تقارير/صرفيات/تسجيلات دخول) دفعةً
+  /// واحدة كي لا تبقى سجلّات يتيمة تشوّه الإجماليات.
+  Future<void> deleteSiteCascade(String siteId) async {
+    final batch = _db.batch();
+    batch.delete(_col(FsCollections.sites).doc(siteId));
+    for (final c in [
+      FsCollections.receipts,
+      FsCollections.executionReports,
+      FsCollections.expenses,
+      FsCollections.siteCheckins,
+    ]) {
+      final snap = await _col(c).where('siteId', isEqualTo: siteId).get();
+      for (final d in snap.docs) {
+        batch.delete(d.reference);
+      }
+    }
+    await batch.commit();
+  }
+
+  /// حذف مشروع تصميم مع وصولاته وتقاريره اليومية، وفكّ ربط مواقع التنفيذ
+  /// المرتبطة به (دون حذف المواقع نفسها).
+  Future<void> deleteProjectCascade(String projectId) async {
+    final batch = _db.batch();
+    batch.delete(_col(FsCollections.projects).doc(projectId));
+    for (final c in [FsCollections.receipts, FsCollections.dailyReports]) {
+      final snap = await _col(c).where('projectId', isEqualTo: projectId).get();
+      for (final d in snap.docs) {
+        batch.delete(d.reference);
+      }
+    }
+    final sites =
+        await _col(FsCollections.sites).where('projectId', isEqualTo: projectId).get();
+    for (final d in sites.docs) {
+      batch.update(d.reference, {'projectId': null});
+    }
+    await batch.commit();
+  }
+
   List<Receipt> _mapReceipts(QuerySnapshot<Map<String, dynamic>> s) {
     final list = s.docs.map(Receipt.fromDoc).toList();
     list.sort((a, b) => b.date.compareTo(a.date));
@@ -397,14 +574,67 @@ class FirestoreService {
   Future<void> addNotification(AppNotification n) =>
       _col(FsCollections.notifications).add(n.toMap());
 
+  /// المدير يرسل إشعاراً للجميع: يُنشأ إشعار موجّه لكل مستخدم (toUid=uid) دفعةً
+  /// واحدة، فيظهر لكلٍّ في تبويب إشعاراته. (يدعم حتى ~٥٠٠ مستخدم في الدفعة.)
+  Future<int> broadcastNotification({
+    required String title,
+    required String body,
+    required String fromUid,
+    required String fromName,
+  }) async {
+    final usersSnap = await _col(FsCollections.users).get();
+    final batch = _db.batch();
+    for (final doc in usersSnap.docs) {
+      final ref = _col(FsCollections.notifications).doc();
+      batch.set(
+        ref,
+        AppNotification(
+          id: '',
+          type: 'broadcast',
+          title: title,
+          body: body,
+          fromUid: fromUid,
+          fromName: fromName,
+          toUid: doc.id,
+        ).toMap(),
+      );
+    }
+    await batch.commit();
+    return usersSnap.docs.length;
+  }
+
+  /// كل الإشعارات (للوحة الإدارة — ترى كل شيء).
   Stream<List<AppNotification>> notificationsStream() =>
-      _col(FsCollections.notifications).snapshots().map((s) {
-        final list = s.docs.map(AppNotification.fromDoc).toList();
-        list.sort((a, b) => (b.createdAt ?? DateTime(2000))
-            .compareTo(a.createdAt ?? DateTime(2000)));
-        return list;
-      });
+      _col(FsCollections.notifications).snapshots().map(_mapNotifications);
+
+  /// إشعارات موجّهة لمستخدم معيّن (الزبون يرى ما يخصّه فقط — T-4.5).
+  Stream<List<AppNotification>> notificationsForUser(String uid) =>
+      _col(FsCollections.notifications)
+          .where('toUid', isEqualTo: uid)
+          .snapshots()
+          .map(_mapNotifications);
+
+  List<AppNotification> _mapNotifications(
+      QuerySnapshot<Map<String, dynamic>> s) {
+    final list = s.docs.map(AppNotification.fromDoc).toList();
+    list.sort((a, b) => (b.createdAt ?? DateTime(2000))
+        .compareTo(a.createdAt ?? DateTime(2000)));
+    return list;
+  }
 
   Future<void> markNotificationRead(String id) =>
       _col(FsCollections.notifications).doc(id).update({'read': true});
+
+  // --------------------------- إعدادات الشركة ---------------------------
+
+  /// إعدادات الشركة (موقع البصمة + أوقات الدوام الموحّدة) — مستند مفرد.
+  Stream<CompanySettings> companySettings() => _col(FsCollections.settings)
+      .doc('company')
+      .snapshots()
+      .map((d) => d.exists ? CompanySettings.fromDoc(d) : const CompanySettings());
+
+  Future<void> setCompanySettings(CompanySettings s) =>
+      _col(FsCollections.settings)
+          .doc('company')
+          .set(s.toMap(), SetOptions(merge: true));
 }

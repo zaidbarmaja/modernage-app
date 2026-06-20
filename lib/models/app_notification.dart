@@ -9,6 +9,7 @@ class AppNotification {
   final String body;
   final String fromUid;
   final String fromName;
+  final String toUid; // المُستلِم المعني (uid الزبون مثلاً)؛ فارغ = إشعار إداري عام
   final String? relatedId; // معرف الموقع/التقرير المرتبط
   final double? lat;
   final double? lng;
@@ -22,6 +23,7 @@ class AppNotification {
     required this.body,
     this.fromUid = '',
     this.fromName = '',
+    this.toUid = '',
     this.relatedId,
     this.lat,
     this.lng,
@@ -39,6 +41,7 @@ class AppNotification {
       body: (m['body'] ?? '') as String,
       fromUid: (m['fromUid'] ?? '') as String,
       fromName: (m['fromName'] ?? '') as String,
+      toUid: (m['toUid'] ?? '') as String,
       relatedId: m['relatedId'] as String?,
       lat: (m['lat'] as num?)?.toDouble(),
       lng: (m['lng'] as num?)?.toDouble(),
@@ -53,6 +56,7 @@ class AppNotification {
         'body': body,
         'fromUid': fromUid,
         'fromName': fromName,
+        'toUid': toUid,
         'relatedId': relatedId,
         'lat': lat,
         'lng': lng,

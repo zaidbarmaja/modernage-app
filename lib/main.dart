@@ -1,3 +1,4 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/material.dart';
 import 'package:flutter_localizations/flutter_localizations.dart';
@@ -7,9 +8,12 @@ import 'package:provider/provider.dart';
 import 'firebase_options.dart';
 import 'core/theme.dart';
 import 'services/auth_controller.dart';
+import 'services/connectivity_service.dart';
+import 'services/reminder_service.dart';
 import 'services/session.dart';
 import 'widgets/common.dart';
 import 'screens/auth/auth_gate.dart';
+import 'screens/connectivity_gate.dart';
 
 Future<void> main() async {
   WidgetsFlutterBinding.ensureInitialized();
@@ -31,6 +35,16 @@ Future<void> main() async {
     // يُسجّل الخطأ فقط؛ تظهر الشاشات وتعرض حالات الاتصال.
     debugPrint('Firebase init error: $e');
   }
+  // المهمة #2: منع التخزين المحلي — الاعتماد الكلي على Firebase الحي.
+  // عبارة مستقلة (قبل أي وصول لـFirestore) كي لا يُبتلع فشلها مع خطأ التهيئة.
+  try {
+    FirebaseFirestore.instance.settings =
+        const Settings(persistenceEnabled: false);
+  } catch (e) {
+    debugPrint('Firestore persistence-disable error: $e');
+  }
+  // تهيئة خدمة التذكيرات المحلية (تُتجاهَل على الويب).
+  await ReminderService.instance.init();
   runApp(const AsrApp());
 }
 
@@ -41,8 +55,11 @@ class AsrApp extends StatelessWidget {
   Widget build(BuildContext context) {
     // AuthController يستمع لحالة تسجيل الدخول ويحمّل ملف المستخدم،
     // ليتمكّن AuthGate من التوجيه حسب الدور.
-    return ChangeNotifierProvider(
-      create: (_) => AuthController(),
+    return MultiProvider(
+      providers: [
+        ChangeNotifierProvider(create: (_) => AuthController()),
+        ChangeNotifierProvider(create: (_) => ConnectivityService()),
+      ],
       child: MaterialApp(
         title: 'عصر الحداثة',
         debugShowCheckedModeBanner: false,
@@ -58,7 +75,8 @@ class AsrApp extends StatelessWidget {
           textDirection: TextDirection.rtl,
           child: child!,
         ),
-        home: const AuthGate(),
+        // المهمة #1: بوابة الاتصال تحجب التطبيق كلياً عند غياب الإنترنت.
+        home: const ConnectivityGate(child: AuthGate()),
       ),
     );
   }

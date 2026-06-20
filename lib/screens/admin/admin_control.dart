@@ -1,0 +1,432 @@
+import 'package:flutter/material.dart';
+
+import '../../core/constants.dart';
+import '../../core/format.dart';
+import '../../core/theme.dart';
+import '../../models/app_user.dart';
+import '../../models/design_project.dart';
+import '../../models/receipt.dart';
+import '../../models/work_site.dart';
+import '../../services/firestore_service.dart';
+import '../../widgets/ui.dart';
+import '../../widgets/user_dropdown.dart';
+import 'admin_notifications.dart';
+import 'company_settings_screen.dart';
+import 'users_management.dart';
+
+/// لوحة تحكّم الإدارة (تبويب الإعدادات): مدخل موحّد للتحكّم بالحسابات وبيانات
+/// قاعدة البيانات وإعدادات الشركة.
+class AdminControlHub extends StatelessWidget {
+  final AppUser user;
+  const AdminControlHub({super.key, required this.user});
+
+  @override
+  Widget build(BuildContext context) {
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        const PageHeader(
+          title: 'الإعدادات ولوحة التحكّم',
+          subtitle: 'الحسابات + البيانات + إعدادات الشركة',
+          icon: Icons.settings,
+        ),
+        const SizedBox(height: 14),
+        _hubCard(
+          context,
+          icon: Icons.manage_accounts,
+          title: 'إدارة الحسابات',
+          subtitle:
+              'كل الحسابات: تعديل، الأدوار، إعادة تعيين كلمة المرور، تفعيل/تعطيل، حذف',
+          page: Scaffold(
+            appBar: AppBar(title: const Text('إدارة الحسابات')),
+            body: UsersManagementTab(currentUid: user.uid),
+          ),
+        ),
+        _hubCard(
+          context,
+          icon: Icons.notifications_active,
+          title: 'الإشعارات',
+          subtitle: 'إرسال تنبيه لكل المستخدمين + استعراض كل الإشعارات',
+          page: AdminNotificationsScreen(admin: user),
+        ),
+        _hubCard(
+          context,
+          icon: Icons.storage,
+          title: 'إدارة البيانات',
+          subtitle: 'حذف المشاريع والمواقع والوصولات + إعادة إسناد المصممين',
+          page: const DataManagementScreen(),
+        ),
+        _hubCard(
+          context,
+          icon: Icons.apartment,
+          title: 'إعدادات الشركة',
+          subtitle: 'موقع البصمة المعتمد ونطاقه + وقت الدوام الموحّد',
+          page: Scaffold(
+            appBar: AppBar(title: const Text('إعدادات الشركة')),
+            body: const CompanySettingsTab(),
+          ),
+        ),
+      ],
+    );
+  }
+
+  Widget _hubCard(BuildContext context,
+      {required IconData icon,
+      required String title,
+      required String subtitle,
+      required Widget page}) {
+    return Card(
+      child: ListTile(
+        contentPadding:
+            const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
+        leading: CircleAvatar(
+          backgroundColor: AppColors.oliveDark,
+          child: Icon(icon, color: AppColors.cream),
+        ),
+        title: Text(title,
+            style: const TextStyle(
+                color: AppColors.cream, fontWeight: FontWeight.bold)),
+        subtitle: Text(subtitle,
+            style: const TextStyle(color: AppColors.creamDim, height: 1.4)),
+        trailing: const Icon(Icons.chevron_left, color: AppColors.creamDim),
+        onTap: () => Navigator.push(
+            context, MaterialPageRoute(builder: (_) => page)),
+      ),
+    );
+  }
+}
+
+/// إدارة بيانات قاعدة البيانات (للمدير): حذف المشاريع/المواقع/الوصولات،
+/// وإعادة إسناد مشاريع التصميم لمصمم آخر.
+class DataManagementScreen extends StatelessWidget {
+  const DataManagementScreen({super.key});
+
+  @override
+  Widget build(BuildContext context) {
+    return DefaultTabController(
+      length: 3,
+      child: Scaffold(
+        appBar: AppBar(
+          title: const Text('إدارة البيانات'),
+          bottom: const TabBar(
+            tabs: [
+              Tab(text: 'المشاريع'),
+              Tab(text: 'المواقع'),
+              Tab(text: 'الوصولات'),
+            ],
+          ),
+        ),
+        body: const TabBarView(
+          children: [
+            _ProjectsManage(),
+            _SitesManage(),
+            _ReceiptsManage(),
+          ],
+        ),
+      ),
+    );
+  }
+}
+
+/// تأكيد حذف عام.
+Future<bool> _confirmDelete(BuildContext context, String message) async {
+  final ok = await showDialog<bool>(
+    context: context,
+    builder: (ctx) => AlertDialog(
+      backgroundColor: AppColors.surface,
+      title: const Text('تأكيد الحذف', style: TextStyle(color: AppColors.cream)),
+      content: Text('$message\nلا يمكن التراجع.',
+          style: const TextStyle(color: AppColors.creamDim, height: 1.6)),
+      actions: [
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, false),
+          child:
+              const Text('إلغاء', style: TextStyle(color: AppColors.creamDim)),
+        ),
+        TextButton(
+          onPressed: () => Navigator.pop(ctx, true),
+          child: const Text('حذف نهائي',
+              style: TextStyle(color: AppColors.danger)),
+        ),
+      ],
+    ),
+  );
+  return ok == true;
+}
+
+class _ProjectsManage extends StatelessWidget {
+  const _ProjectsManage();
+
+  @override
+  Widget build(BuildContext context) {
+    final fs = FirestoreService();
+    return StreamBuilder<List<DesignProject>>(
+      stream: fs.allProjects(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const LoadingView();
+        }
+        final projects = snap.data ?? const <DesignProject>[];
+        if (projects.isEmpty) {
+          return const EmptyState(
+              message: 'لا توجد مشاريع تصميم.', icon: Icons.architecture);
+        }
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: projects
+              .map((p) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.architecture,
+                          color: AppColors.oliveBright),
+                      title: Text(p.ownerName,
+                          style: const TextStyle(
+                              color: AppColors.cream,
+                              fontWeight: FontWeight.bold)),
+                      subtitle: Text(
+                        '${p.offerType.isEmpty ? 'مشروع تصميم' : p.offerType}\n'
+                        'المصمّم: ${p.designerName.isEmpty ? 'غير مُسنَد' : p.designerName}',
+                        style: const TextStyle(
+                            color: AppColors.creamDim, height: 1.4),
+                      ),
+                      isThreeLine: true,
+                      trailing: PopupMenuButton<String>(
+                        color: AppColors.surfaceAlt,
+                        icon: const Icon(Icons.more_vert,
+                            color: AppColors.creamDim),
+                        onSelected: (v) {
+                          if (v == 'reassign') {
+                            _reassignDesigner(context, fs, p);
+                          } else if (v == 'delete') {
+                            _deleteProject(context, fs, p);
+                          }
+                        },
+                        itemBuilder: (_) => const [
+                          PopupMenuItem(
+                            value: 'reassign',
+                            child: Text('إعادة الإسناد لمصمم',
+                                style: TextStyle(color: AppColors.cream)),
+                          ),
+                          PopupMenuItem(
+                            value: 'delete',
+                            child: Text('حذف المشروع',
+                                style: TextStyle(color: AppColors.danger)),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteProject(
+      BuildContext context, FirestoreService fs, DesignProject p) async {
+    if (!await _confirmDelete(context,
+        'حذف مشروع «${p.ownerName}» مع وصولاته وتقاريره اليومية؟ '
+        'وستُفكّ مواقع التنفيذ المرتبطة به.')) {
+      return;
+    }
+    try {
+      await fs.deleteProjectCascade(p.id);
+      if (context.mounted) showSnack(context, 'تم حذف المشروع وما يتبعه ✓');
+    } catch (_) {
+      if (context.mounted) {
+        showSnack(context, 'تعذّر حذف المشروع.', error: true);
+      }
+    }
+  }
+
+  Future<void> _reassignDesigner(
+      BuildContext context, FirestoreService fs, DesignProject p) async {
+    // نبدأ بلا اختيار: تُلتقط القيمة حصراً من اختيار حيّ في القائمة، فلا يُحفظ
+    // مصمّم قديم/محذوف عن طريق الخطأ. زرّ الحفظ معطّل حتى يُختار مصمّم صالح.
+    String? uid;
+    String name = '';
+    final saved = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('إسناد مشروع «${p.ownerName}»',
+              style: const TextStyle(color: AppColors.cream, fontSize: 18)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              Text(
+                'المصمّم الحالي: ${p.designerName.isEmpty ? 'غير مُسنَد' : p.designerName}',
+                style: const TextStyle(color: AppColors.creamDim, height: 1.5),
+              ),
+              const SizedBox(height: 14),
+              UserDropdown(
+                role: UserRole.designEmployee,
+                selectedUid: uid,
+                label: 'المصمّم الجديد',
+                icon: Icons.architecture,
+                onChanged: (u) => setLocal(() {
+                  uid = u?.uid;
+                  name = u?.name ?? '';
+                }),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: AppColors.creamDim)),
+            ),
+            ElevatedButton(
+              onPressed: uid == null ? null : () => Navigator.pop(ctx, true),
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    if (saved != true || uid == null) return;
+    try {
+      await fs.updateProject(
+          p.id, {'designerUid': uid, 'designerName': name});
+      if (context.mounted) {
+        showSnack(context, 'تم إسناد المشروع إلى $name ✓');
+      }
+    } catch (_) {
+      if (context.mounted) {
+        showSnack(context, 'تعذّر إعادة الإسناد.', error: true);
+      }
+    }
+  }
+}
+
+class _SitesManage extends StatelessWidget {
+  const _SitesManage();
+
+  @override
+  Widget build(BuildContext context) {
+    final fs = FirestoreService();
+    return StreamBuilder<List<WorkSite>>(
+      stream: fs.allSites(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const LoadingView();
+        }
+        final sites = snap.data ?? const <WorkSite>[];
+        if (sites.isEmpty) {
+          return const EmptyState(
+              message: 'لا توجد مواقع تنفيذ.', icon: Icons.location_city);
+        }
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: sites
+              .map((s) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.location_city,
+                          color: AppColors.oliveBright),
+                      title: Text(
+                          s.siteName.isEmpty ? s.ownerName : s.siteName,
+                          style: const TextStyle(
+                              color: AppColors.cream,
+                              fontWeight: FontWeight.bold)),
+                      subtitle: Text(
+                        'صاحب المشروع: ${s.ownerName}'
+                        '${s.executorsLabel.isEmpty ? '' : '\nالمنفّذ: ${s.executorsLabel}'}',
+                        style: const TextStyle(
+                            color: AppColors.creamDim, height: 1.4),
+                      ),
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            color: AppColors.danger),
+                        onPressed: () => _deleteSite(context, fs, s),
+                      ),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteSite(
+      BuildContext context, FirestoreService fs, WorkSite s) async {
+    final label = s.siteName.isEmpty ? s.ownerName : s.siteName;
+    if (!await _confirmDelete(context,
+        'حذف موقع «$label» مع وصولاته وتقاريره وصرفياته وتسجيلات الدخول؟')) {
+      return;
+    }
+    try {
+      await fs.deleteSiteCascade(s.id);
+      if (context.mounted) showSnack(context, 'تم حذف الموقع وما يتبعه ✓');
+    } catch (_) {
+      if (context.mounted) {
+        showSnack(context, 'تعذّر حذف الموقع.', error: true);
+      }
+    }
+  }
+}
+
+class _ReceiptsManage extends StatelessWidget {
+  const _ReceiptsManage();
+
+  @override
+  Widget build(BuildContext context) {
+    final fs = FirestoreService();
+    return StreamBuilder<List<Receipt>>(
+      stream: fs.allReceipts(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const LoadingView();
+        }
+        final receipts = snap.data ?? const <Receipt>[];
+        if (receipts.isEmpty) {
+          return const EmptyState(
+              message: 'لا توجد وصولات.', icon: Icons.receipt_long);
+        }
+        return ListView(
+          padding: const EdgeInsets.all(12),
+          children: receipts
+              .map((r) => Card(
+                    child: ListTile(
+                      leading: const Icon(Icons.receipt_long,
+                          color: AppColors.success),
+                      title: Text(Fmt.money(r.amount),
+                          style: const TextStyle(
+                              color: AppColors.cream,
+                              fontWeight: FontWeight.bold)),
+                      subtitle: Text(
+                        '${r.ownerName.isEmpty ? (r.description.isEmpty ? 'وصل' : r.description) : r.ownerName}\n'
+                        'رقم ${r.shortNo} • ${Fmt.date(r.date)}',
+                        style: const TextStyle(
+                            color: AppColors.creamDim, height: 1.4),
+                      ),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        icon: const Icon(Icons.delete_outline,
+                            color: AppColors.danger),
+                        onPressed: () => _deleteReceipt(context, fs, r),
+                      ),
+                    ),
+                  ))
+              .toList(),
+        );
+      },
+    );
+  }
+
+  Future<void> _deleteReceipt(
+      BuildContext context, FirestoreService fs, Receipt r) async {
+    if (!await _confirmDelete(
+        context, 'حذف وصل ${r.shortNo} بمبلغ ${Fmt.money(r.amount)}؟')) {
+      return;
+    }
+    try {
+      await fs.deleteReceipt(r.id);
+      if (context.mounted) showSnack(context, 'تم حذف الوصل ✓');
+    } catch (_) {
+      if (context.mounted) {
+        showSnack(context, 'تعذّر حذف الوصل.', error: true);
+      }
+    }
+  }
+}

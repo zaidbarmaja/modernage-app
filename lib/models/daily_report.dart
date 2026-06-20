@@ -10,6 +10,7 @@ class DailyReport {
   final String content;
   final String? projectId; // ربط اختياري بمشروع/موقع
   final String projectName;
+  final String? customerUid; // زبون المشروع المرتبط (لعرض تقاريره وعزل بياناته)
   final DateTime? createdAt;
 
   /// مفتاح اليوم المخزّن (yyyy-MM-dd). يُقرأ من الوثيقة لا يُعاد حسابه من
@@ -24,6 +25,7 @@ class DailyReport {
     required this.content,
     this.projectId,
     this.projectName = '',
+    this.customerUid,
     this.createdAt,
     String? dayKey,
   }) : dayKey = (dayKey == null || dayKey.isEmpty) ? dayKeyOf(date) : dayKey;
@@ -41,6 +43,7 @@ class DailyReport {
       content: (m['content'] ?? '') as String,
       projectId: m['projectId'] as String?,
       projectName: (m['projectName'] ?? '') as String,
+      customerUid: m['customerUid'] as String?,
       createdAt: (m['createdAt'] as Timestamp?)?.toDate(),
       dayKey: m['dayKey'] as String?, // المخزّن أولاً، وإلا يُحسب من التاريخ
     );
@@ -54,6 +57,7 @@ class DailyReport {
         'content': content,
         'projectId': projectId,
         'projectName': projectName,
+        'customerUid': customerUid,
         'createdAt': createdAt == null
             ? FieldValue.serverTimestamp()
             : Timestamp.fromDate(createdAt!),

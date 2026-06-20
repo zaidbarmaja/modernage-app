@@ -1,7 +1,10 @@
+import 'dart:convert';
 import 'dart:math';
 
+import 'package:crypto/crypto.dart';
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:firebase_core/firebase_core.dart';
+import 'package:flutter/foundation.dart' show kIsWeb;
 
 import '../core/constants.dart';
 import '../firebase_options.dart';
@@ -35,11 +38,55 @@ class AuthService {
     return 'u$h@modernage.local';
   }
 
+  /// تجزئة كلمة المرور المخزّنة في مجموعة credentials المنفصلة: ملح عشوائي لكل
+  /// مستخدم + تمطيط (key stretching) لإبطاء أي هجوم تخمين. لا تُخزَّن كنصّ صريح
+  /// ولا داخل ملف المستخدم.
+  static const _pwSalt = 'modernage::pw::v1';
+  static const _pwIterations = 12000;
+
+  static String _stretch(String salt, String uid, String plain) {
+    var digest = sha256.convert(utf8.encode('$_pwSalt|$salt|$uid|$plain'));
+    for (var i = 1; i < _pwIterations; i++) {
+      digest = sha256.convert(digest.bytes);
+    }
+    return digest.toString();
+  }
+
+  /// ملح عشوائي آمن (hex، 16 بايت) لكل عملية تعيين كلمة مرور.
+  static String newSalt() {
+    final r = Random.secure();
+    return List.generate(
+        16, (_) => r.nextInt(256).toRadixString(16).padLeft(2, '0')).join();
+  }
+
+  /// ينشئ بيانات اعتماد {salt, hash} لكلمة مرور (تُخزَّن في مجموعة credentials).
+  static Map<String, String> makeCredential(String uid, String plain) {
+    final salt = newSalt();
+    return {'salt': salt, 'hash': _stretch(salt, uid, plain)};
+  }
+
+  /// يتحقّق من كلمة مرور ضدّ بيانات اعتماد مخزّنة.
+  static bool verifyCredential(
+          String uid, String plain, String salt, String hash) =>
+      _stretch(salt, uid, plain) == hash;
+
   /// مفاتيح الدخول المطبّعة لحساب (الاسم + الهاتف إن وُجد) — للدخول بأيّهما.
   List<String> loginKeys(String loginId, String phone) {
     final keys = <String>{_normId(loginId)};
     if (phone.trim().isNotEmpty) keys.add(_normId(phone));
     return keys.toList();
+  }
+
+  /// "تذكّرني": على الويب يتحكّم ببقاء الجلسة بعد إغلاق المتصفّح
+  /// (LOCAL = تبقى، SESSION = تنتهي بالإغلاق). على الموبايل تبقى الجلسة دائماً.
+  Future<void> setRememberMe(bool remember) async {
+    if (!kIsWeb) return;
+    try {
+      await _auth.setPersistence(
+          remember ? Persistence.LOCAL : Persistence.SESSION);
+    } catch (_) {
+      // لا نُفشل الدخول إن تعذّر ضبط الإبقاء.
+    }
   }
 
   Future<void> signIn(String identifier, String password) async {
@@ -71,9 +118,10 @@ class AuthService {
     required String password,
   }) async {
     try {
+      // كلمة Firebase داخلية قوية؛ الرمز الرباعي يُخزَّن كاعتماد Firestore.
       final cred = await _auth.createUserWithEmailAndPassword(
         email: _idToEmail(username),
-        password: password,
+        password: newSalt(),
       );
       final isFirst = !(await _fs.hasAnyUser());
       if (!isFirst) {
@@ -91,7 +139,10 @@ class AuthService {
         loginNames: loginKeys(username, ''),
         role: UserRole.admin,
         department: Department.none,
+        useFirestorePassword: true,
       ));
+      final c = makeCredential(cred.user!.uid, password.trim());
+      await _fs.setCredential(cred.user!.uid, c['salt']!, c['hash']!);
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageFor(e.code));
     }
@@ -100,14 +151,15 @@ class AuthService {
   /// إنشاء حساب (موظف أو زبون) من لوحة الإدارة دون إخراج الأدمن من جلسته:
   /// تُنشأ بيانات المصادقة عبر نسخة Firebase ثانوية، ثم يُكتب ملف المستخدم
   /// عبر النسخة الأساسية (حيث الأدمن مصادَق) لتوافق قواعد الأمان.
-  Future<void> _createAccount({
+  Future<String> _createAccount({
     required String name,
     required String loginId,
-    required String password,
+    required String code, // رمز الدخول (٤ أرقام) — يُخزَّن كاعتماد Firestore
     required UserRole role,
     required Department department,
-    int workStartMin = 8 * 60,
-    int workEndMin = 16 * 60,
+    WorkCategory workCategory = WorkCategory.general,
+    int? workStartMin, // اختياري: null = دوام غير محدّد (المهمة #4)
+    int? workEndMin,
     String phone = '',
     String contact = '',
   }) async {
@@ -123,14 +175,17 @@ class AuthService {
         name: _secondaryAppName,
         options: DefaultFirebaseOptions.currentPlatform,
       );
+      // كلمة Firebase داخلية قوية (لا يدخل بها المستخدم) — لتجاوز حدّ الـ٦ أحرف؛
+      // الرمز الرباعي الظاهر يُخزَّن كاعتماد Firestore ويُفعَّل مساره.
       final cred = await FirebaseAuth.instanceFor(app: secondary)
           .createUserWithEmailAndPassword(
         email: _idToEmail(loginId),
-        password: password,
+        password: newSalt(),
       );
+      final uid = cred.user!.uid;
       await cred.user!.updateDisplayName(name);
       await _fs.createUser(AppUser(
-        uid: cred.user!.uid,
+        uid: uid,
         name: name.trim(),
         username: loginId.trim(),
         email: _idToEmail(loginId),
@@ -138,10 +193,15 @@ class AuthService {
         phone: phone.trim(),
         role: role,
         department: department,
+        workCategory: workCategory,
         workStartMin: workStartMin,
         workEndMin: workEndMin,
         contact: contact.trim(),
+        useFirestorePassword: true,
       ));
+      final c = makeCredential(uid, code.trim());
+      await _fs.setCredential(uid, c['salt']!, c['hash']!);
+      return uid;
     } on FirebaseAuthException catch (e) {
       throw AuthException(_messageFor(e.code));
     } finally {
@@ -156,42 +216,66 @@ class AuthService {
     required String password,
     required UserRole role,
     required Department department,
-    int workStartMin = 8 * 60,
-    int workEndMin = 16 * 60,
+    WorkCategory workCategory = WorkCategory.general,
+    int? workStartMin,
+    int? workEndMin,
     String phone = '',
-  }) =>
-      _createAccount(
-        name: name,
-        loginId: username,
-        password: password,
-        role: role,
-        department: department,
-        workStartMin: workStartMin,
-        workEndMin: workEndMin,
-        phone: phone,
-      );
+  }) async {
+    await _createAccount(
+      name: name,
+      loginId: username,
+      code: password, // رمز الدخول (٤ أرقام)
+      role: role,
+      department: department,
+      workCategory: workCategory,
+      workStartMin: workStartMin,
+      workEndMin: workEndMin,
+      phone: phone,
+    );
+  }
 
-  /// إنشاء حساب زبون: يدخل برقم هاتفه ورمز الوصول (يصدره الأدمن/النظام).
+  /// إنشاء حساب زبون: يدخل برقم هاتفه ورمز وصول من **٤ أرقام** (عبر مسار كلمة
+  /// مرور Firestore — لتجاوز حدّ Firebase Auth البالغ ٦ أحرف).
   Future<void> createCustomerAccount({
     required String name,
     required String phone,
     required String accessCode,
     String contact = '',
-  }) =>
-      _createAccount(
-        name: name,
-        loginId: phone,
-        password: accessCode,
-        role: UserRole.customer,
-        department: Department.none,
-        phone: phone,
-        contact: contact,
-      );
+  }) async {
+    await _createAccount(
+      name: name,
+      loginId: phone,
+      code: accessCode,
+      role: UserRole.customer,
+      department: Department.none,
+      phone: phone,
+      contact: contact,
+    );
+  }
 
-  /// توليد رمز وصول رقمي (6 خانات) لحساب الزبون.
+  /// توليد رمز وصول رقمي (٤ خانات) لحساب الزبون.
   static String generateAccessCode() {
     final r = Random();
-    return List.generate(6, (_) => r.nextInt(10)).join();
+    return List.generate(4, (_) => r.nextInt(10)).join();
+  }
+
+  /// يغيّر المستخدم كلمة مروره بنفسه: يعيد المصادقة بكلمته الحالية ثم يحدّثها.
+  /// متاح للحسابات الحقيقية فقط (لا يعمل في وضع الدخول التجريبي بلا Firebase).
+  Future<void> changeOwnPassword(
+      String currentPassword, String newPassword) async {
+    final user = _auth.currentUser;
+    if (user == null || (user.email ?? '').isEmpty) {
+      throw const AuthException(
+          'غير متاح: سجّل الدخول بحساب حقيقي لتغيير كلمة المرور.');
+    }
+    try {
+      final cred = EmailAuthProvider.credential(
+          email: user.email!, password: currentPassword);
+      await user.reauthenticateWithCredential(cred);
+      await user.updatePassword(newPassword);
+    } on FirebaseAuthException catch (e) {
+      throw AuthException(_messageFor(e.code));
+    }
   }
 
   Future<void> signOut() => _auth.signOut();

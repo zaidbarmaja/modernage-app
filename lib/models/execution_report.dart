@@ -14,6 +14,7 @@ class ExecutionReport {
   final List<String> photoUrls; // الصور اليومية للعمل
   final String plannedNextDays; // ماذا سيُنفَّذ في الأيام القادمة
   final int? durationDays; // كم مدة التنفيذ لهذا العمل
+  final String? customerUid; // زبون الموقع — ليقرأ تقاريره وصوره ضمن قواعد الأمان
   final DateTime? createdAt;
 
   const ExecutionReport({
@@ -28,6 +29,7 @@ class ExecutionReport {
     this.photoUrls = const [],
     this.plannedNextDays = '',
     this.durationDays,
+    this.customerUid,
     this.createdAt,
   });
 
@@ -47,6 +49,7 @@ class ExecutionReport {
           .toList(),
       plannedNextDays: (m['plannedNextDays'] ?? '') as String,
       durationDays: (m['durationDays'] as num?)?.toInt(),
+      customerUid: m['customerUid'] as String?,
       createdAt: (m['createdAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -62,6 +65,7 @@ class ExecutionReport {
         'photoUrls': photoUrls,
         'plannedNextDays': plannedNextDays,
         'durationDays': durationDays,
+        'customerUid': customerUid,
         'createdAt': createdAt == null
             ? FieldValue.serverTimestamp()
             : Timestamp.fromDate(createdAt!),

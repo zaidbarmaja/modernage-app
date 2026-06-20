@@ -1,14 +1,11 @@
 import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
-import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/design_project.dart';
-import '../../models/expense.dart';
 import '../../models/work_site.dart';
 import '../../services/firestore_service.dart';
-import '../../widgets/execution_widgets.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/site_card.dart';
 import '../../widgets/ui.dart';
@@ -96,43 +93,6 @@ class _ExecutorWork extends StatelessWidget {
     return ListView(
       padding: const EdgeInsets.all(12),
       children: [
-        // ملخّص السلف والصرفيات لهذا المنفّذ.
-        StreamBuilder<List<Expense>>(
-          stream: fs.expensesByExecutor(employee.uid),
-          builder: (context, snapshot) {
-            final items = snapshot.data ?? [];
-            num advances = 0, spending = 0;
-            for (final e in items) {
-              if (e.type == ExpenseType.advance) {
-                advances += e.amount;
-              } else {
-                spending += e.amount;
-              }
-            }
-            return SectionCard(
-              title: 'السلف والصرفيات',
-              icon: Icons.payments,
-              child: Column(
-                children: [
-                  InfoRow(
-                      label: 'إجمالي السلف',
-                      value: Fmt.money(advances),
-                      valueColor: AppColors.warning),
-                  InfoRow(
-                      label: 'إجمالي الصرفيات',
-                      value: Fmt.money(spending),
-                      valueColor: AppColors.danger),
-                  InfoRow(
-                      label: 'المجموع',
-                      value: Fmt.money(advances + spending)),
-                  if (items.isNotEmpty) const Divider(height: 20),
-                  ...items.take(20).map((e) => ExpenseTile(expense: e)),
-                ],
-              ),
-            );
-          },
-        ),
-        const SizedBox(height: 12),
         Text('المواقع المسندة',
             style: const TextStyle(
                 color: AppColors.cream,

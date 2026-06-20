@@ -1,5 +1,6 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/work_site.dart';
@@ -26,7 +27,7 @@ class _ExecutionHomeState extends State<ExecutionHome> {
   @override
   Widget build(BuildContext context) {
     final tabs = [
-      _AttendanceTab(user: widget.user),
+      AttendanceTab(user: widget.user),
       _SitesTab(user: widget.user),
       DailyReportsView(user: widget.user),
     ];
@@ -55,31 +56,6 @@ class _ExecutionHomeState extends State<ExecutionHome> {
   }
 }
 
-/// تبويب البصمة لموظف التنفيذ: يجلب مواقعه المسندة ويمرّرها لشاشة البصمة
-/// لفرض النطاق الجغرافي (التسجيل من داخل الموقع فقط — T-3.1).
-class _AttendanceTab extends StatelessWidget {
-  final AppUser user;
-  const _AttendanceTab({required this.user});
-
-  @override
-  Widget build(BuildContext context) {
-    final fs = FirestoreService();
-    return StreamBuilder<List<WorkSite>>(
-      stream: fs.sitesByExecutor(user.uid),
-      builder: (context, snapshot) {
-        if (snapshot.connectionState == ConnectionState.waiting) {
-          return const LoadingView();
-        }
-        return AttendanceView(
-          user: user,
-          geofenceSites: snapshot.data ?? const [],
-          enforceGeofence: true,
-        );
-      },
-    );
-  }
-}
-
 class _SitesTab extends StatelessWidget {
   final AppUser user;
   const _SitesTab({required this.user});
@@ -93,6 +69,10 @@ class _SitesTab extends StatelessWidget {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingView();
         }
+        if (snapshot.hasError) {
+          return const EmptyState(
+              message: 'تعذّر تحميل المواقع.', icon: Icons.error_outline);
+        }
         final sites = snapshot.data ?? [];
         if (sites.isEmpty) {
           return const EmptyState(
@@ -101,20 +81,42 @@ class _SitesTab extends StatelessWidget {
             icon: Icons.location_city,
           );
         }
-        return ListView.builder(
+        // تجميع المواقع حسب قسم التنفيذ (عام / إشراف مسابح / تنفيذ مسابح).
+        final children = <Widget>[];
+        for (final cat in WorkCategory.values) {
+          final group = sites.where((s) => s.category == cat).toList();
+          if (group.isEmpty) continue;
+          children.add(_categoryHeader(cat, group.length));
+          children.addAll(group.map((s) => SiteCard(
+                site: s,
+                onTap: () => Navigator.push(
+                  context,
+                  MaterialPageRoute(
+                    builder: (_) => SiteDetailScreen(site: s, user: user),
+                  ),
+                ),
+              )));
+        }
+        return ListView(
           padding: const EdgeInsets.all(12),
-          itemCount: sites.length,
-          itemBuilder: (context, i) => SiteCard(
-            site: sites[i],
-            onTap: () => Navigator.push(
-              context,
-              MaterialPageRoute(
-                builder: (_) => SiteDetailScreen(site: sites[i], user: user),
-              ),
-            ),
-          ),
+          children: children,
         );
       },
     );
   }
+
+  Widget _categoryHeader(WorkCategory cat, int count) => Padding(
+        padding: const EdgeInsets.fromLTRB(4, 10, 4, 6),
+        child: Row(
+          children: [
+            Icon(cat.icon, size: 18, color: AppColors.oliveBright),
+            const SizedBox(width: 6),
+            Text('${cat.labelAr} ($count)',
+                style: const TextStyle(
+                    color: AppColors.cream,
+                    fontSize: 15,
+                    fontWeight: FontWeight.bold)),
+          ],
+        ),
+      );
 }

@@ -6,18 +6,37 @@ import '../models/app_notification.dart';
 import '../services/firestore_service.dart';
 import 'ui.dart';
 
-/// قائمة الإشعارات الداخلية (دخول المواقع وغيرها) للوحة الإدارة/المحاسبة.
+/// قائمة الإشعارات الداخلية (دخول المواقع/وصولات/تقارير).
+/// بلا [stream] = كل الإشعارات (الإدارة)؛ مع [stream] = إشعارات مستخدم محدّد (الزبون).
 class NotificationsView extends StatelessWidget {
-  const NotificationsView({super.key});
+  final Stream<List<AppNotification>>? stream;
+  const NotificationsView({super.key, this.stream});
+
+  IconData _iconFor(String type) {
+    switch (type) {
+      case 'site_checkin':
+        return Icons.location_on;
+      case 'receipt':
+        return Icons.receipt_long;
+      case 'report':
+        return Icons.event_note;
+      default:
+        return Icons.notifications;
+    }
+  }
 
   @override
   Widget build(BuildContext context) {
     final fs = FirestoreService();
     return StreamBuilder<List<AppNotification>>(
-      stream: fs.notificationsStream(),
+      stream: stream ?? fs.notificationsStream(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingView();
+        }
+        if (snapshot.hasError) {
+          return const EmptyState(
+              message: 'تعذّر تحميل الإشعارات.', icon: Icons.error_outline);
         }
         final items = snapshot.data ?? [];
         if (items.isEmpty) {
@@ -37,12 +56,7 @@ class NotificationsView extends StatelessWidget {
               child: ListTile(
                 leading: CircleAvatar(
                   backgroundColor: AppColors.olive,
-                  child: Icon(
-                    n.type == 'site_checkin'
-                        ? Icons.location_on
-                        : Icons.notifications,
-                    color: AppColors.cream,
-                  ),
+                  child: Icon(_iconFor(n.type), color: AppColors.cream),
                 ),
                 title: Text(n.title,
                     style: const TextStyle(

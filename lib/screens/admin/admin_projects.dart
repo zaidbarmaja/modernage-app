@@ -15,7 +15,7 @@ import 'add_site_form.dart';
 
 enum _ProjType { all, design, execution }
 
-enum _DesignStatus { all, active, done }
+enum _DesignStatus { all, active, done, onHold }
 
 /// عرض كل المشاريع (T-1.11): قائمة شاملة لمشاريع التصميم ومواقع التنفيذ معاً،
 /// مع بحث وفلترة حسب النوع/الزبون/الحالة، والضغط يفتح التفاصيل الكاملة.
@@ -34,6 +34,7 @@ class _AdminProjectsViewState extends State<AdminProjectsView> {
   _ProjType _type = _ProjType.all;
   _DesignStatus _status = _DesignStatus.all;
   String? _customerUid; // null = كل الزبائن
+  WorkCategory? _category; // null = كل أقسام التنفيذ
 
   @override
   void dispose() {
@@ -107,10 +108,32 @@ class _AdminProjectsViewState extends State<AdminProjectsView> {
                 const SizedBox(width: 8),
                 Expanded(child: _statusFilter()),
               ],
+              if (_type != _ProjType.design) ...[
+                const SizedBox(width: 8),
+                Expanded(child: _categoryFilter()),
+              ],
             ],
           ),
         ],
       ),
+    );
+  }
+
+  Widget _categoryFilter() {
+    return DropdownButtonFormField<WorkCategory?>(
+      initialValue: _category,
+      isExpanded: true,
+      isDense: true,
+      dropdownColor: AppColors.surfaceAlt,
+      decoration: const InputDecoration(labelText: 'قسم التنفيذ'),
+      items: [
+        const DropdownMenuItem<WorkCategory?>(value: null, child: Text('الكل')),
+        ...WorkCategory.values.map((c) => DropdownMenuItem<WorkCategory?>(
+              value: c,
+              child: Text(c.labelAr, overflow: TextOverflow.ellipsis),
+            )),
+      ],
+      onChanged: (v) => setState(() => _category = v),
     );
   }
 
@@ -160,6 +183,7 @@ class _AdminProjectsViewState extends State<AdminProjectsView> {
         DropdownMenuItem(value: _DesignStatus.all, child: Text('الكل')),
         DropdownMenuItem(value: _DesignStatus.active, child: Text('نشط')),
         DropdownMenuItem(value: _DesignStatus.done, child: Text('منجز')),
+        DropdownMenuItem(value: _DesignStatus.onHold, child: Text('معلّق')),
       ],
       onChanged: (v) => setState(() => _status = v ?? _DesignStatus.all),
     );
@@ -181,6 +205,9 @@ class _AdminProjectsViewState extends State<AdminProjectsView> {
             return false;
           }
           if (_status == _DesignStatus.done && p.remainingAmount > 0) {
+            return false;
+          }
+          if (_status == _DesignStatus.onHold && p.status != 'معلّق') {
             return false;
           }
           return _matchSearch(p.ownerName, p.details);
@@ -225,12 +252,18 @@ class _AdminProjectsViewState extends State<AdminProjectsView> {
           if (_customerUid != null && s.customerUid != _customerUid) {
             return false;
           }
+          if (_category != null && s.category != _category) {
+            return false;
+          }
           return _matchSearch(s.ownerName, s.siteName);
         }).toList();
+        final title = _category == null
+            ? 'مواقع التنفيذ (${list.length})'
+            : '${_category!.labelAr} (${list.length})';
         return Column(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
-            _sectionHeader('مواقع التنفيذ (${list.length})', Icons.location_city),
+            _sectionHeader(title, Icons.location_city),
             if (list.isEmpty)
               const Padding(
                 padding: EdgeInsets.symmetric(vertical: 8),

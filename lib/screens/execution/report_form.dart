@@ -1,9 +1,10 @@
-import 'dart:io';
+import 'dart:typed_data';
 
 import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme.dart';
+import '../../models/app_notification.dart';
 import '../../models/app_user.dart';
 import '../../models/execution_report.dart';
 import '../../models/work_site.dart';
@@ -27,24 +28,34 @@ class _ReportFormState extends State<ReportForm> {
   final _storage = StorageService();
   final _picker = ImagePicker();
 
-  final _docs = TextEditingController();
   final _planned = TextEditingController();
   final _duration = TextEditingController();
   final List<XFile> _picked = [];
+  final List<Uint8List> _bytes = []; // للمعاينة (يعمل على الويب والموبايل)
   bool _busy = false;
 
   @override
   void dispose() {
-    _docs.dispose();
     _planned.dispose();
     _duration.dispose();
     super.dispose();
   }
 
+  Future<void> _add(XFile f) async {
+    final bytes = await f.readAsBytes();
+    if (!mounted) return;
+    setState(() {
+      _picked.add(f);
+      _bytes.add(bytes);
+    });
+  }
+
   Future<void> _pickImages() async {
     try {
       final files = await _picker.pickMultiImage(imageQuality: 70);
-      if (files.isNotEmpty) setState(() => _picked.addAll(files));
+      for (final f in files) {
+        await _add(f);
+      }
     } catch (_) {
       if (mounted) showSnack(context, 'تعذّر اختيار الصور.', error: true);
     }
@@ -54,7 +65,7 @@ class _ReportFormState extends State<ReportForm> {
     try {
       final file =
           await _picker.pickImage(source: ImageSource.camera, imageQuality: 70);
-      if (file != null) setState(() => _picked.add(file));
+      if (file != null) await _add(file);
     } catch (_) {
       if (mounted) showSnack(context, 'تعذّر فتح الكاميرا.', error: true);
     }
@@ -64,12 +75,10 @@ class _ReportFormState extends State<ReportForm> {
     if (!_formKey.currentState!.validate()) return;
     setState(() => _busy = true);
     try {
-      List<String> urls = [];
-      if (_picked.isNotEmpty) {
-        urls = await _storage.uploadImages(
-          _picked.map((x) => File(x.path)).toList(),
-          folder: 'reports/${widget.site.id}',
-        );
+      final urls = <String>[];
+      for (final x in _picked) {
+        urls.add(await _storage.uploadXFile(x,
+            folder: 'reports/${widget.site.id}'));
       }
       await _fs.addReport(ExecutionReport(
         id: '',
@@ -79,17 +88,34 @@ class _ReportFormState extends State<ReportForm> {
         executorUid: widget.executor.uid,
         executorName: widget.executor.name,
         date: DateTime.now(),
-        documentsNotes: _docs.text.trim(),
+        documentsNotes: '',
         plannedNextDays: _planned.text.trim(),
         durationDays: int.tryParse(_duration.text.trim()),
         photoUrls: urls,
+        customerUid: widget.site.customerUid,
       ));
+      // إشعار بتقرير جديد موجّه لزبون الموقع (والإدارة ترى الكل) — T-4.5.
+      // لا نُنشئ إشعاراً بلا مستلِم إن لم يكن الموقع مربوطاً بزبون.
+      final customerUid = widget.site.customerUid ?? '';
+      if (customerUid.isNotEmpty) {
+        await _fs.addNotification(AppNotification(
+          id: '',
+          type: 'report',
+          title: 'تقرير تنفيذ جديد',
+          body:
+              '${widget.executor.name} أضاف تقريراً لموقع ${widget.site.ownerName}',
+          fromUid: widget.executor.uid,
+          fromName: widget.executor.name,
+          toUid: customerUid,
+          relatedId: widget.site.id,
+        ));
+      }
       if (mounted) {
         showSnack(context, 'تم حفظ التقرير ✓');
         Navigator.pop(context);
       }
-    } catch (_) {
-      if (mounted) showSnack(context, 'تعذّر حفظ التقرير.', error: true);
+    } catch (e) {
+      if (mounted) showSnack(context, 'تعذّر حفظ التقرير: $e', error: true);
     } finally {
       if (mounted) setState(() => _busy = false);
     }
@@ -107,16 +133,6 @@ class _ReportFormState extends State<ReportForm> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextFormField(
-                  controller: _docs,
-                  maxLines: 3,
-                  decoration: const InputDecoration(
-                    labelText: 'المستندات والملاحظات',
-                    alignLabelWithHint: true,
-                    prefixIcon: Icon(Icons.note_alt_outlined),
-                  ),
-                ),
-                const SizedBox(height: 14),
                 TextFormField(
                   controller: _planned,
                   maxLines: 3,
@@ -172,8 +188,8 @@ class _ReportFormState extends State<ReportForm> {
                         children: [
                           ClipRRect(
                             borderRadius: BorderRadius.circular(12),
-                            child: Image.file(
-                              File(_picked[i].path),
+                            child: Image.memory(
+                              _bytes[i],
                               width: 92,
                               height: 92,
                               fit: BoxFit.cover,
@@ -183,8 +199,10 @@ class _ReportFormState extends State<ReportForm> {
                             top: 0,
                             left: 0,
                             child: GestureDetector(
-                              onTap: () =>
-                                  setState(() => _picked.removeAt(i)),
+                              onTap: () => setState(() {
+                                _picked.removeAt(i);
+                                _bytes.removeAt(i);
+                              }),
                               child: Container(
                                 decoration: const BoxDecoration(
                                   color: AppColors.danger,

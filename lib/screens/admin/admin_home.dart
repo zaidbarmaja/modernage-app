@@ -8,9 +8,10 @@ import '../design/design_project_form.dart';
 import 'add_customer_form.dart';
 import 'add_employee_form.dart';
 import 'add_site_form.dart';
+import 'admin_comprehensive_board.dart';
+import 'admin_control.dart';
 import 'admin_overview.dart';
 import 'admin_projects.dart';
-import 'admin_reports.dart';
 import 'users_management.dart';
 
 /// الصفحة الرئيسية للإدارة:
@@ -31,7 +32,7 @@ class _AdminHomeState extends State<AdminHome> {
     'المشاريع',
     'المستخدمون',
     'التقارير',
-    'الإشعارات',
+    'الإعدادات',
   ];
 
   @override
@@ -40,13 +41,28 @@ class _AdminHomeState extends State<AdminHome> {
       const AdminOverview(),
       AdminProjectsView(user: widget.user),
       UsersManagementTab(currentUid: widget.user.uid),
-      const AdminReportsView(),
-      const NotificationsView(),
+      const AdminComprehensiveBoard(),
+      AdminControlHub(user: widget.user),
     ];
     return Scaffold(
       appBar: AppBar(
         title: Text('الإدارة • ${_titles[_index]}'),
-        actions: const [LogoutAction()],
+        actions: [
+          IconButton(
+            tooltip: 'الإشعارات',
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('الإشعارات')),
+                  body: const NotificationsView(),
+                ),
+              ),
+            ),
+          ),
+          const LogoutAction(),
+        ],
       ),
       body: IndexedStack(index: _index, children: tabs),
       bottomNavigationBar: NavigationBar(
@@ -63,7 +79,7 @@ class _AdminHomeState extends State<AdminHome> {
           NavigationDestination(
               icon: Icon(Icons.event_note), label: 'التقارير'),
           NavigationDestination(
-              icon: Icon(Icons.notifications), label: 'الإشعارات'),
+              icon: Icon(Icons.settings), label: 'الإعدادات'),
         ],
       ),
       floatingActionButton: switch (_index) {

@@ -1,20 +1,21 @@
 import 'package:flutter/material.dart';
 
-/// ألوان مستوحاة من شعار "عصر الحداثة":
-/// خلفية سوداء، دائرة خضراء زيتونية، وإطار وخط كريمي.
+/// ثيم «أزرق ليلي هادئ» — مريح للعين: خلفية زرقاء داكنة دافئة، تمييز أزرق
+/// هادئ، ونص فاتح بتباين معتدل. (أسماء الألوان محفوظة لتوافق كل الشاشات؛
+/// `olive*` صارت درجات الأزرق، و`cream*` صارت النص الفاتح.)
 class AppColors {
   AppColors._();
 
-  static const Color background = Color(0xFF0E0F0C); // أسود مائل للأخضر
-  static const Color surface = Color(0xFF1B1F17); // بطاقة داكنة بلمسة زيتونية
-  static const Color surfaceAlt = Color(0xFF242A1E);
+  static const Color background = Color(0xFF14181F); // أزرق ليلي داكن
+  static const Color surface = Color(0xFF1E242E); // بطاقة زرقاء داكنة
+  static const Color surfaceAlt = Color(0xFF29323F);
 
-  static const Color olive = Color(0xFF5E6B4C); // الأخضر الزيتوني الأساسي
-  static const Color oliveDark = Color(0xFF424D36);
-  static const Color oliveBright = Color(0xFF7C8A63);
+  static const Color olive = Color(0xFF6E8AB0); // الأزرق الهادئ الأساسي (تمييز)
+  static const Color oliveDark = Color(0xFF44597A);
+  static const Color oliveBright = Color(0xFF8FA9CC);
 
-  static const Color cream = Color(0xFFE9E3CF); // الكريمي الأساسي (نص/إطار)
-  static const Color creamDim = Color(0xFFB9B49F); // كريمي باهت للنص الثانوي
+  static const Color cream = Color(0xFFE6EAF0); // النص الفاتح الأساسي
+  static const Color creamDim = Color(0xFFACB5C2); // نص ثانوي باهت
 
   static const Color success = Color(0xFF6FA86B);
   static const Color danger = Color(0xFFC75D5D);
@@ -66,7 +67,7 @@ class AppTheme {
         elevation: 2,
         shape: RoundedRectangleBorder(
           borderRadius: BorderRadius.circular(18),
-          side: const BorderSide(color: Color(0x33E9E3CF), width: 0.6),
+          side: const BorderSide(color: Color(0x33E6EAF0), width: 0.6),
         ),
         margin: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
       ),
@@ -99,7 +100,7 @@ class AppTheme {
         prefixIconColor: AppColors.oliveBright,
         enabledBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
-          borderSide: const BorderSide(color: Color(0x33E9E3CF)),
+          borderSide: const BorderSide(color: Color(0x33E6EAF0)),
         ),
         focusedBorder: OutlineInputBorder(
           borderRadius: BorderRadius.circular(14),
@@ -110,7 +111,7 @@ class AppTheme {
         ),
       ),
       iconTheme: const IconThemeData(color: AppColors.cream),
-      dividerColor: const Color(0x22E9E3CF),
+      dividerColor: const Color(0x22E6EAF0),
       textTheme: base.textTheme.apply(
         bodyColor: AppColors.cream,
         displayColor: AppColors.cream,

@@ -12,11 +12,21 @@ class AppUser {
   final String phone;
   final UserRole role;
   final Department department; // قسم/تصنيف (تسمية فقط — الدوام أصبح مخصّصاً)
-  final int workStartMin; // بداية الدوام (دقائق من منتصف الليل) — يحدّدها المدير
-  final int workEndMin; // نهاية الدوام (دقائق من منتصف الليل)
+  // تصنيف موظف التنفيذ: تنفيذ عام / إشراف مسابح / تنفيذ مسابح (لقسم المسابح).
+  final WorkCategory workCategory;
+  // أوقات الدوام اختيارية (Nullable): قد لا يحدّدها المدير عند الإنشاء (المهمة #4).
+  final int? workStartMin; // بداية الدوام (دقائق من منتصف الليل) — null = غير محدّد
+  final int? workEndMin; // نهاية الدوام (دقائق من منتصف الليل) — null = غير محدّد
   final String contact; // بيانات التواصل (عنوان/هاتف بديل/ملاحظات) — للزبون أساساً
   final bool active; // هل الحساب مفعّل؟ تعطيله يمنع الدخول فوراً
+  // عند true: يُتحقّق من الدخول عبر بيانات اعتماد Firestore (مجموعة credentials
+  // المنفصلة) بدل كلمة مرور Firebase Auth. تجزئة كلمة المرور لا تُحفظ هنا أبداً.
+  final bool useFirestorePassword;
   final DateTime? createdAt;
+
+  /// قيم الدوام الافتراضية حين لا يحدّدها المدير.
+  static const int defaultStartMin = 8 * 60; // 8:00 ص
+  static const int defaultEndMin = 16 * 60; // 4:00 م
 
   const AppUser({
     required this.uid,
@@ -27,12 +37,21 @@ class AppUser {
     this.phone = '',
     required this.role,
     this.department = Department.none,
-    this.workStartMin = 8 * 60,
-    this.workEndMin = 16 * 60,
+    this.workCategory = WorkCategory.general,
+    this.workStartMin,
+    this.workEndMin,
     this.contact = '',
     this.active = true,
+    this.useFirestorePassword = false,
     this.createdAt,
   });
+
+  /// بداية/نهاية الدوام الفعليتان (تتراجعان للافتراضي عند عدم التحديد).
+  int get effectiveStartMin => workStartMin ?? defaultStartMin;
+  int get effectiveEndMin => workEndMin ?? defaultEndMin;
+
+  /// هل حُدّد للموظف جدول دوام مخصّص؟
+  bool get hasCustomSchedule => workStartMin != null && workEndMin != null;
 
   factory AppUser.fromMap(String uid, Map<String, dynamic> map) {
     return AppUser(
@@ -46,10 +65,12 @@ class AppUser {
       phone: (map['phone'] ?? '') as String,
       role: UserRoleX.fromId(map['role'] as String?),
       department: DepartmentX.fromId(map['department'] as String?),
-      workStartMin: (map['workStartMin'] as num?)?.toInt() ?? 8 * 60,
-      workEndMin: (map['workEndMin'] as num?)?.toInt() ?? 16 * 60,
+      workCategory: WorkCategoryX.fromId(map['workCategory'] as String?),
+      workStartMin: (map['workStartMin'] as num?)?.toInt(),
+      workEndMin: (map['workEndMin'] as num?)?.toInt(),
       contact: (map['contact'] ?? '') as String,
       active: (map['active'] as bool?) ?? true,
+      useFirestorePassword: (map['useFirestorePassword'] as bool?) ?? false,
       createdAt: (map['createdAt'] as Timestamp?)?.toDate(),
     );
   }
@@ -65,10 +86,12 @@ class AppUser {
         'phone': phone,
         'role': role.id,
         'department': department.id,
+        'workCategory': workCategory.id,
         'workStartMin': workStartMin,
         'workEndMin': workEndMin,
         'contact': contact,
         'active': active,
+        'useFirestorePassword': useFirestorePassword,
         'createdAt': createdAt == null
             ? FieldValue.serverTimestamp()
             : Timestamp.fromDate(createdAt!),
@@ -83,6 +106,7 @@ class AppUser {
     String? phone,
     UserRole? role,
     Department? department,
+    WorkCategory? workCategory,
     int? workStartMin,
     int? workEndMin,
     String? contact,
@@ -97,10 +121,12 @@ class AppUser {
       phone: phone ?? this.phone,
       role: role ?? this.role,
       department: department ?? this.department,
+      workCategory: workCategory ?? this.workCategory,
       workStartMin: workStartMin ?? this.workStartMin,
       workEndMin: workEndMin ?? this.workEndMin,
       contact: contact ?? this.contact,
       active: active ?? this.active,
+      useFirestorePassword: useFirestorePassword,
       createdAt: createdAt,
     );
   }

@@ -1,11 +1,15 @@
 import 'package:flutter/material.dart';
+import 'package:provider/provider.dart';
 
 import '../../core/constants.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
+import '../../services/auth_controller.dart';
+import '../../services/auth_service.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/ui.dart';
 import '../attendance/attendance_view.dart';
+import 'add_employee_form.dart';
 
 /// تبويب إدارة المستخدمين: بحث + عرض الجميع + تغيير الدور/القسم + تفعيل/تعطيل.
 /// التعطيل يمنع الدخول فوراً (عبر AuthGate الذي يستمع لملف المستخدم لحظياً).
@@ -21,6 +25,8 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
   final _fs = FirestoreService();
   final _search = TextEditingController();
   String _query = '';
+  // المهمة #3: تبديل سريع بين عرض الطاقم الداخلي وعرض الزبائن (للأدمن).
+  bool _showCustomers = false;
 
   @override
   void dispose() {
@@ -34,6 +40,24 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
       children: [
         Padding(
           padding: const EdgeInsets.fromLTRB(12, 12, 12, 6),
+          child: SegmentedButton<bool>(
+            segments: const [
+              ButtonSegment(
+                  value: false,
+                  label: Text('الموظفون'),
+                  icon: Icon(Icons.engineering)),
+              ButtonSegment(
+                  value: true,
+                  label: Text('الزبائن'),
+                  icon: Icon(Icons.people)),
+            ],
+            selected: {_showCustomers},
+            onSelectionChanged: (s) =>
+                setState(() => _showCustomers = s.first),
+          ),
+        ),
+        Padding(
+          padding: const EdgeInsets.fromLTRB(12, 0, 12, 6),
           child: TextField(
             controller: _search,
             onChanged: (v) => setState(() => _query = v.trim()),
@@ -60,6 +84,12 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
                 return const LoadingView();
               }
               var users = snapshot.data ?? [];
+              // تصفية حسب التبويب: طاقم داخلي (غير الزبائن) أو زبائن.
+              users = users
+                  .where((u) => _showCustomers
+                      ? u.role == UserRole.customer
+                      : u.role != UserRole.customer)
+                  .toList();
               if (_query.isNotEmpty) {
                 final q = _query.toLowerCase();
                 users = users
@@ -70,8 +100,11 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
               }
               if (users.isEmpty) {
                 return EmptyState(
-                  message:
-                      _query.isEmpty ? 'لا يوجد مستخدمون بعد.' : 'لا نتائج للبحث.',
+                  message: _query.isNotEmpty
+                      ? 'لا نتائج للبحث.'
+                      : (_showCustomers
+                          ? 'لا يوجد زبائن بعد.'
+                          : 'لا يوجد موظفون بعد.'),
                   icon: Icons.people_outline,
                 );
               }
@@ -126,9 +159,10 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
         ),
         subtitle: Text(
           '${u.role.labelAr}'
+          '${u.role == UserRole.executionEmployee && u.workCategory.isPools ? ' • ${u.workCategory.labelAr}' : ''}'
           '${u.department != Department.none ? ' • ${u.department.labelAr}' : ''}'
           '${u.phone.isNotEmpty ? '\n${u.phone}' : ''}'
-          '${u.isEmployee ? '\nالدوام: ${_fmtMin(u.workStartMin)}–${_fmtMin(u.workEndMin)}' : ''}'
+          '${u.isEmployee ? '\nالدوام: ${u.hasCustomSchedule ? '${_fmtMin(u.workStartMin!)}–${_fmtMin(u.workEndMin!)}' : 'غير محدّد'}' : ''}'
           '${u.contact.isNotEmpty ? '\n${u.contact}' : ''}',
           style: const TextStyle(color: AppColors.creamDim, height: 1.5),
         ),
@@ -137,22 +171,48 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
           color: AppColors.surfaceAlt,
           icon: const Icon(Icons.more_vert, color: AppColors.creamDim),
           onSelected: (v) {
-            if (v == 'role') {
+            if (v == 'edit') {
+              Navigator.push(
+                context,
+                MaterialPageRoute(
+                    builder: (_) => AddEmployeeForm(existing: u)),
+              );
+            } else if (v == 'role') {
               _editRole(context, u);
             } else if (v == 'toggle') {
               _toggleActive(u);
             } else if (v == 'attendance') {
               _viewAttendance(context, u);
+            } else if (v == 'impersonate') {
+              _impersonate(u);
+            } else if (v == 'password') {
+              _resetPassword(u);
             } else if (v == 'delete') {
               _deleteUser(u);
             }
           },
           itemBuilder: (ctx) => [
             const PopupMenuItem(
+              value: 'edit',
+              child: Text('تعديل المعلومات',
+                  style: TextStyle(color: AppColors.cream)),
+            ),
+            const PopupMenuItem(
               value: 'role',
               child:
                   Text('تغيير الدور', style: TextStyle(color: AppColors.cream)),
             ),
+            const PopupMenuItem(
+              value: 'password',
+              child: Text('إعادة تعيين كلمة المرور',
+                  style: TextStyle(color: AppColors.cream)),
+            ),
+            if (!isSelf)
+              const PopupMenuItem(
+                value: 'impersonate',
+                child: Text('الدخول إلى الحساب',
+                    style: TextStyle(color: AppColors.oliveBright)),
+              ),
             if (u.isEmployee)
               const PopupMenuItem(
                 value: 'attendance',
@@ -178,6 +238,36 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
         ),
       ),
     );
+  }
+
+  /// يدخل الأدمن إلى حساب المستخدم ويتصرّف كأنه هو (مع شريط عودة دائم).
+  Future<void> _impersonate(AppUser u) async {
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('الدخول إلى الحساب',
+            style: TextStyle(color: AppColors.cream)),
+        content: Text(
+          'ستدخل إلى حساب «${u.name.isEmpty ? u.phone : u.name}» (${u.role.labelAr}) '
+          'وتتصرّف كأنك هو — أي إجراء (تقرير/مهمة/وصل…) يُنسب إليه.\n'
+          'يمكنك العودة لحساب الإدارة في أي وقت من الشريط العلوي.',
+          style: const TextStyle(color: AppColors.creamDim, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: AppColors.creamDim))),
+          ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('دخول')),
+        ],
+      ),
+    );
+    if (ok == true && mounted) {
+      context.read<AuthController>().impersonate(u);
+    }
   }
 
   void _viewAttendance(BuildContext context, AppUser u) {
@@ -225,6 +315,80 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
     }
   }
 
+  /// المدير يعيّن كلمة مرور جديدة لأي حساب (تُخزَّن كتجزئة في Firestore،
+  /// ويصبح الدخول بها مباشرةً عبر مسار كلمة مرور Firestore).
+  Future<void> _resetPassword(AppUser u) async {
+    final ctrl = TextEditingController();
+    var obscure = true;
+    final newPass = await showDialog<String>(
+      context: context,
+      builder: (ctx) => StatefulBuilder(
+        builder: (ctx, setLocal) => AlertDialog(
+          backgroundColor: AppColors.surface,
+          title: Text('رمز الدخول: ${u.name.isEmpty ? u.phone : u.name}',
+              style: const TextStyle(color: AppColors.cream, fontSize: 18)),
+          content: Column(
+            mainAxisSize: MainAxisSize.min,
+            children: [
+              const Text(
+                'أدخل رمز دخول جديداً (4 أرقام) لهذا الحساب — يدخل به مباشرة بعد الحفظ.',
+                style: TextStyle(color: AppColors.creamDim, height: 1.5),
+              ),
+              const SizedBox(height: 14),
+              TextField(
+                controller: ctrl,
+                obscureText: obscure,
+                keyboardType: TextInputType.number,
+                textDirection: TextDirection.ltr,
+                style: const TextStyle(color: AppColors.cream),
+                decoration: InputDecoration(
+                  labelText: 'الرمز الجديد (4 أرقام)',
+                  prefixIcon: const Icon(Icons.lock_reset),
+                  suffixIcon: IconButton(
+                    icon: Icon(
+                        obscure ? Icons.visibility_off : Icons.visibility),
+                    onPressed: () => setLocal(() => obscure = !obscure),
+                  ),
+                ),
+              ),
+            ],
+          ),
+          actions: [
+            TextButton(
+              onPressed: () => Navigator.pop(ctx),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: AppColors.creamDim)),
+            ),
+            ElevatedButton(
+              onPressed: () => Navigator.pop(ctx, ctrl.text),
+              child: const Text('حفظ'),
+            ),
+          ],
+        ),
+      ),
+    );
+    ctrl.dispose();
+    if (newPass == null) return;
+    // نتحقّق ونجزّئ نفس القيمة (مقصوصة) كي يطابقها الدخول الذي لا يقصّ.
+    // كل الحسابات: رمز دخول من ٤ أرقام.
+    final pass = newPass.trim();
+    if (pass.length != 4 || int.tryParse(pass) == null) {
+      if (mounted) {
+        showSnack(context, 'رمز الدخول 4 أرقام.', error: true);
+      }
+      return;
+    }
+    try {
+      final c = AuthService.makeCredential(u.uid, pass);
+      await _fs.setUserPassword(u.uid, c['salt']!, c['hash']!);
+      if (mounted) {
+        showSnack(context, 'تم تعيين كلمة مرور جديدة لـ ${u.name} ✓');
+      }
+    } catch (_) {
+      if (mounted) showSnack(context, 'تعذّر تعيين كلمة المرور.', error: true);
+    }
+  }
+
   Future<void> _toggleActive(AppUser u) async {
     try {
       await _fs.setUserActive(u.uid, !u.active);
@@ -241,6 +405,7 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
     UserRole role = user.role;
     Department department =
         user.department == Department.none ? Department.civil : user.department;
+    WorkCategory category = user.workCategory;
 
     bool needsDept(UserRole r) =>
         r == UserRole.designEmployee || r == UserRole.executionEmployee;
@@ -288,6 +453,23 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
                   onChanged: (v) => setLocal(() => department = v ?? department),
                 ),
               ],
+              if (role == UserRole.executionEmployee) ...[
+                const SizedBox(height: 14),
+                DropdownButtonFormField<WorkCategory>(
+                  initialValue: category,
+                  isExpanded: true,
+                  dropdownColor: AppColors.surfaceAlt,
+                  decoration: const InputDecoration(
+                    labelText: 'قسم التنفيذ',
+                    prefixIcon: Icon(Icons.account_tree_outlined),
+                  ),
+                  items: WorkCategory.values
+                      .map((c) => DropdownMenuItem(
+                            value: c, child: Text(c.labelAr)))
+                      .toList(),
+                  onChanged: (v) => setLocal(() => category = v ?? category),
+                ),
+              ],
             ],
           ),
           actions: [
@@ -299,7 +481,8 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
             ElevatedButton(
               onPressed: () async {
                 final dept = needsDept(role) ? department : Department.none;
-                await _fs.updateUserRole(user.uid, role, dept);
+                await _fs.updateUserRole(user.uid, role, dept,
+                    workCategory: category);
                 if (ctx.mounted) Navigator.pop(ctx);
                 if (context.mounted) {
                   showSnack(context, 'تم تحديث دور ${user.name} ✓');

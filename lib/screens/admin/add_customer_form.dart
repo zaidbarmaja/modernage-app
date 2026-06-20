@@ -121,8 +121,10 @@ class _AddCustomerFormState extends State<AddCustomerForm> {
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _code,
+                  keyboardType: TextInputType.number,
+                  textDirection: TextDirection.ltr,
                   decoration: InputDecoration(
-                    labelText: 'رمز الدخول (يُسلّم للزبون)',
+                    labelText: 'رمز الدخول — 4 أرقام (يُسلّم للزبون)',
                     prefixIcon: const Icon(Icons.vpn_key_outlined),
                     suffixIcon: IconButton(
                       tooltip: 'توليد رمز جديد',
@@ -131,9 +133,13 @@ class _AddCustomerFormState extends State<AddCustomerForm> {
                           () => _code.text = AuthService.generateAccessCode()),
                     ),
                   ),
-                  validator: (v) => (v == null || v.trim().length < 4)
-                      ? 'رمز الدخول 4 خانات على الأقل'
-                      : null,
+                  validator: (v) {
+                    final t = (v ?? '').trim();
+                    if (t.length != 4 || int.tryParse(t) == null) {
+                      return 'رمز الدخول 4 أرقام';
+                    }
+                    return null;
+                  },
                 ),
                 const SizedBox(height: 26),
                 ElevatedButton.icon(

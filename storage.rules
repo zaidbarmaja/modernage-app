@@ -1,9 +1,22 @@
 rules_version = '2';
+
+// قواعد تخزين «عصر الحداثة» (T-4.7): الرفع للطاقم فقط، والقراءة للمسجّلين.
+// (صور الوصولات/التقارير يرفعها الطاقم، ويراها الزبون ضمن وصولاته/تقاريره.)
+// تُنشَر عبر: firebase deploy --only storage  أو من كونسول Firebase ← Storage ← Rules.
 service firebase.storage {
   match /b/{bucket}/o {
-    // رفع/قراءة الصور للمستخدمين المسجّلين فقط.
+
+    function isStaff() {
+      return request.auth != null &&
+        firestore.get(/databases/(default)/documents/users/$(request.auth.uid)).data.role
+          in ['admin', 'accounting', 'designEmployee', 'executionEmployee'];
+    }
+
     match /{allPaths=**} {
-      allow read, write: if request.auth != null;
+      // أي مستخدم مسجّل يقرأ الصور (الزبون يرى صور وصولاته/تقارير مشاريعه).
+      allow read: if request.auth != null;
+      // الرفع/التعديل للطاقم فقط (الزبون لا يرفع شيئاً).
+      allow write: if isStaff();
     }
   }
 }

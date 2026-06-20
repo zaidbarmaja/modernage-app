@@ -1,14 +1,16 @@
 import 'package:flutter/material.dart';
+import 'package:intl/intl.dart';
 
 import '../../core/constants.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/attendance.dart';
-import '../../models/work_site.dart';
+import '../../models/company_settings.dart';
 import '../../services/biometric_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
+import '../../services/reminder_service.dart';
 import '../../widgets/ui.dart';
 
 /// واجهة البصمة: تسجيل دخول/خروج بالموقع + ملخّص الساعات والسجل.
@@ -17,19 +19,15 @@ class AttendanceView extends StatefulWidget {
   final AppUser user;
   final bool interactive; // true = يمكن تسجيل بصمة، false = عرض فقط
 
-  /// مواقع العمل المسندة (لموظف التنفيذ) — تُستخدم لفحص النطاق الجغرافي.
-  final List<WorkSite> geofenceSites;
-
-  /// هل يُفرض النطاق الجغرافي؟ يُفعَّل لموظف التنفيذ (T-3.1). عند تفعيله مع
-  /// عدم وجود مواقع مسندة، يُمنع تسجيل الدخول مع رسالة واضحة (لا يُتجاوز الفحص).
-  final bool enforceGeofence;
+  /// إعدادات الشركة (موقع البصمة المعتمد + وقت الدوام الموحّد). تُفرض البصمة من
+  /// داخل نطاق موقع الشركة إن حُدِّد، ويُحسب الدوام من أوقاتها.
+  final CompanySettings company;
 
   const AttendanceView({
     super.key,
     required this.user,
     this.interactive = true,
-    this.geofenceSites = const [],
-    this.enforceGeofence = false,
+    this.company = const CompanySettings(),
   });
 
   @override
@@ -39,6 +37,9 @@ class AttendanceView extends StatefulWidget {
 class _AttendanceViewState extends State<AttendanceView> {
   final _fs = FirestoreService();
   bool _busy = false;
+
+  /// الشهر المختار لفلترة الملخّص والسجل (null = كل الأشهر). الافتراضي: هذا الشهر.
+  DateTime? _month = DateTime(DateTime.now().year, DateTime.now().month);
 
   bool get _isFriday => DateTime.now().weekday == weekendDay;
 
@@ -64,35 +65,16 @@ class _AttendanceViewState extends State<AttendanceView> {
   /// سماحية لخطأ دقّة GPS (متر) تُضاف للنطاق لتفادي الرفض الكاذب عند الحافة.
   static const int _gpsToleranceM = 25;
 
-  /// يتحقّق أن الإحداثيات الحالية داخل نطاق أحد مواقع العمل المسندة.
+  /// يتحقّق أن الإحداثيات الحالية داخل نطاق موقع الشركة المعتمد.
   /// يُستخدم لتسجيل الدخول فقط (لا يُقيَّد الخروج حتى لا يُحبس من غادر الموقع).
-  /// يعيد null إن كان ضمن النطاق أو لا فرض، وإلا رسالة رفض عربية واضحة.
+  /// يعيد null إن كان ضمن النطاق أو لم يُحدَّد موقع الشركة، وإلا رسالة رفض.
   String? _geofenceReject(double lat, double lng) {
-    if (!widget.enforceGeofence) return null; // موظف بلا فرض (تصميم/محاسبة)
-    if (widget.geofenceSites.isEmpty) {
-      return 'لا توجد مواقع عمل مسندة إليك — راجع الإدارة لإسناد موقع.';
-    }
-    final located = widget.geofenceSites
-        .where((s) => s.lat != null && s.lng != null)
-        .toList();
-    if (located.isEmpty) {
-      return 'لم تُحدَّد إحداثيات موقع العمل بعد. راجع الإدارة لضبط الموقع.';
-    }
-    WorkSite? nearest;
-    var best = double.infinity;
-    for (final s in located) {
-      final d = LocationService.distanceMeters(lat, lng, s.lat!, s.lng!);
-      if (d <= s.radius + _gpsToleranceM) return null; // داخل النطاق المسموح
-      if (d < best) {
-        best = d;
-        nearest = s;
-      }
-    }
-    final name = (nearest!.siteName.trim().isNotEmpty)
-        ? nearest.siteName.trim()
-        : (nearest.ownerName.trim().isEmpty ? 'الموقع' : nearest.ownerName.trim());
-    return 'أنت خارج نطاق موقع العمل. أقرب موقع «$name» يبعد ${best.round()} م '
-        '(المسموح ${nearest.radius} م). اقترب من الموقع ثم حاول مجدداً.';
+    final c = widget.company;
+    if (!c.hasLocation) return null; // لم يُحدَّد موقع الشركة بعد → لا فرض
+    final d = LocationService.distanceMeters(lat, lng, c.lat!, c.lng!);
+    if (d <= c.radius + _gpsToleranceM) return null; // داخل النطاق المسموح
+    return 'أنت خارج نطاق موقع الشركة (تبعد ${d.round()} م، والمسموح ${c.radius} م). '
+        'اقترب من موقع الشركة ثم سجّل البصمة.';
   }
 
   Future<void> _punchIn() async {
@@ -111,8 +93,8 @@ class _AttendanceViewState extends State<AttendanceView> {
         uid: widget.user.uid,
         userName: widget.user.name,
         department: widget.user.department,
-        workStartMin: widget.user.workStartMin,
-        workEndMin: widget.user.workEndMin,
+        workStartMin: widget.company.workStartMin,
+        workEndMin: widget.company.workEndMin,
         checkIn: now,
         checkInLat: loc.lat,
         checkInLng: loc.lng,
@@ -160,7 +142,6 @@ class _AttendanceViewState extends State<AttendanceView> {
           return const LoadingView();
         }
         final records = snapshot.data ?? [];
-        final summary = AttendanceSummary.fromRecords(records);
         final todayKey = AttendanceRecord.dayKeyOf(DateTime.now());
         AttendanceRecord? today;
         for (final r in records) {
@@ -169,6 +150,16 @@ class _AttendanceViewState extends State<AttendanceView> {
             break;
           }
         }
+        // فلترة بالشهر المختار (تطبَّق على الملخّص والسجل).
+        final months = _availableMonths(records);
+        final sel = _month;
+        final filtered = sel == null
+            ? records
+            : records
+                .where((r) =>
+                    r.checkIn.year == sel.year && r.checkIn.month == sel.month)
+                .toList();
+        final summary = AttendanceSummary.fromRecords(filtered);
 
         return ListView(
           padding: const EdgeInsets.all(16),
@@ -179,6 +170,8 @@ class _AttendanceViewState extends State<AttendanceView> {
               _punchCard(today),
               const SizedBox(height: 12),
             ],
+            _monthFilterCard(months),
+            const SizedBox(height: 12),
             _summaryCard(summary),
             const SizedBox(height: 12),
             Text('سجل البصمة',
@@ -187,11 +180,11 @@ class _AttendanceViewState extends State<AttendanceView> {
                     fontSize: 16,
                     fontWeight: FontWeight.bold)),
             const SizedBox(height: 8),
-            if (records.isEmpty)
+            if (filtered.isEmpty)
               const EmptyState(
-                  message: 'لا توجد سجلات بصمة بعد.',
+                  message: 'لا توجد سجلات بصمة لهذه الفترة.',
                   icon: Icons.fingerprint),
-            ...records.map(_historyTile),
+            ...filtered.map(_historyTile),
           ],
         );
       },
@@ -201,9 +194,53 @@ class _AttendanceViewState extends State<AttendanceView> {
   static String _fmtMin(int m) =>
       '${(m ~/ 60).toString().padLeft(2, '0')}:${(m % 60).toString().padLeft(2, '0')}';
 
+  /// الأشهر المتاحة للفلترة (الأحدث أولاً) — أشهر السجلات + الشهر الحالي دائماً.
+  List<DateTime> _availableMonths(List<AttendanceRecord> records) {
+    final byKey = <String, DateTime>{};
+    final now = DateTime.now();
+    final cur = DateTime(now.year, now.month);
+    byKey['${cur.year}-${cur.month}'] = cur;
+    for (final r in records) {
+      final m = DateTime(r.checkIn.year, r.checkIn.month);
+      byKey['${m.year}-${m.month}'] = m;
+    }
+    final list = byKey.values.toList()..sort((a, b) => b.compareTo(a));
+    return list;
+  }
+
+  static String _monthLabel(DateTime m) =>
+      DateFormat('MMMM yyyy', 'ar').format(m);
+
+  Widget _monthFilterCard(List<DateTime> months) {
+    return SectionCard(
+      title: 'فلترة الملخّص بالشهر',
+      icon: Icons.filter_alt,
+      child: DropdownButtonFormField<DateTime?>(
+        initialValue: _month,
+        isExpanded: true,
+        dropdownColor: AppColors.surfaceAlt,
+        decoration: const InputDecoration(
+          labelText: 'الشهر',
+          prefixIcon: Icon(Icons.calendar_month),
+        ),
+        items: [
+          const DropdownMenuItem<DateTime?>(
+              value: null, child: Text('كل الأشهر')),
+          ...months.map((m) => DropdownMenuItem<DateTime?>(
+                value: m,
+                child: Text(_monthLabel(m)),
+              )),
+        ],
+        onChanged: (v) => setState(() => _month = v),
+      ),
+    );
+  }
+
   Widget _scheduleCard() {
     final u = widget.user;
-    final hours = ((u.workEndMin - u.workStartMin) / 60).toStringAsFixed(1);
+    final c = widget.company;
+    final hours =
+        ((c.workEndMin - c.workStartMin) / 60).toStringAsFixed(1);
     return SectionCard(
       title: 'دوام اليوم',
       icon: Icons.schedule,
@@ -214,7 +251,7 @@ class _AttendanceViewState extends State<AttendanceView> {
           InfoRow(
               label: 'الدوام الرسمي',
               value:
-                  'من ${_fmtMin(u.workStartMin)} إلى ${_fmtMin(u.workEndMin)}'),
+                  'من ${_fmtMin(c.workStartMin)} إلى ${_fmtMin(c.workEndMin)}'),
           InfoRow(label: 'ساعات الدوام', value: '$hours ساعة'),
           InfoRow(label: 'التاريخ', value: Fmt.date(DateTime.now())),
           if (_isFriday)
@@ -251,7 +288,7 @@ class _AttendanceViewState extends State<AttendanceView> {
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
         children: [
-          if (widget.enforceGeofence) ...[
+          if (widget.company.hasLocation) ...[
             Container(
               padding: const EdgeInsets.all(10),
               decoration: BoxDecoration(
@@ -264,7 +301,7 @@ class _AttendanceViewState extends State<AttendanceView> {
                   SizedBox(width: 8),
                   Expanded(
                     child: Text(
-                        'تسجيل الدخول مسموح فقط من داخل نطاق موقع العمل المسند إليك.',
+                        'تسجيل الدخول مسموح فقط من داخل نطاق موقع الشركة المعتمد.',
                         style: TextStyle(color: AppColors.cream, fontSize: 13)),
                   ),
                 ],
@@ -391,6 +428,46 @@ class _AttendanceViewState extends State<AttendanceView> {
         ),
         isThreeLine: r.checkOut != null,
       ),
+    );
+  }
+}
+
+/// تبويب البصمة للموظف: يجلب إعدادات الشركة (موقع البصمة + وقت الدوام) ويمرّرها
+/// لشاشة البصمة، ويُجدول تذكيرات الدخول/الخروج المحلية على وقت دوام الشركة.
+class AttendanceTab extends StatefulWidget {
+  final AppUser user;
+  const AttendanceTab({super.key, required this.user});
+
+  @override
+  State<AttendanceTab> createState() => _AttendanceTabState();
+}
+
+class _AttendanceTabState extends State<AttendanceTab> {
+  final _fs = FirestoreService();
+  String _scheduledSig = ''; // توقيع آخر أوقات جُدوِلت (لتفادي التكرار)
+
+  void _maybeSchedule(CompanySettings c) {
+    final sig = '${c.workStartMin}-${c.workEndMin}';
+    if (sig == _scheduledSig) return;
+    _scheduledSig = sig;
+    ReminderService.instance.scheduleWorkReminders(
+      workStartMin: c.workStartMin,
+      workEndMin: c.workEndMin,
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    return StreamBuilder<CompanySettings>(
+      stream: _fs.companySettings(),
+      builder: (context, snap) {
+        if (snap.connectionState == ConnectionState.waiting) {
+          return const LoadingView();
+        }
+        final company = snap.data ?? const CompanySettings();
+        _maybeSchedule(company);
+        return AttendanceView(user: widget.user, company: company);
+      },
     );
   }
 }

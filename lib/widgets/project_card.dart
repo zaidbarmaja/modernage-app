@@ -36,7 +36,15 @@ class ProjectCard extends StatelessWidget {
             ? 'متأخر ${-remDays} يوم'
             : '$remDays يوم متبقٍ';
 
+    final onHold = project.status == 'معلّق';
     return Card(
+      // إبراز المشروع المعلّق بإطار أصفر واضح.
+      shape: onHold
+          ? RoundedRectangleBorder(
+              borderRadius: BorderRadius.circular(18),
+              side: const BorderSide(color: AppColors.warning, width: 1.8),
+            )
+          : null,
       child: InkWell(
         onTap: onTap,
         borderRadius: BorderRadius.circular(18),
@@ -71,13 +79,20 @@ class ProjectCard extends StatelessWidget {
                 spacing: 8,
                 runSpacing: 6,
                 children: [
-                  _chip(project.status, Icons.flag,
+                  _chip(project.status,
+                      onHold ? Icons.pause_circle_filled : Icons.flag,
                       color: _statusColor(project.status)),
                   if (project.offerType.isNotEmpty)
                     _chip(project.offerType, Icons.local_offer),
                   _chip(daysText, Icons.event, color: daysColor),
                 ],
               ),
+              if (project.progressPercent != null) ...[
+                const SizedBox(height: 10),
+                ProgressBar(
+                    percent: project.progressPercent!,
+                    label: 'نسبة إنجاز المهام'),
+              ],
               if (project.details.isNotEmpty) ...[
                 const SizedBox(height: 10),
                 Row(

@@ -13,6 +13,8 @@ android {
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
+        // مطلوب لـ flutter_local_notifications (إشعارات الدوام المجدولة).
+        isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
     }
@@ -45,4 +47,9 @@ android {
 
 flutter {
     source = "../.."
+}
+
+dependencies {
+    // مكتبة إعادة تأهيل واجهات Java 8+ (تاريخ/وقت) المطلوبة للإشعارات المجدولة.
+    coreLibraryDesugaring("com.android.tools:desugar_jdk_libs:2.1.4")
 }

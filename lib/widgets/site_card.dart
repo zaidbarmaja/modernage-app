@@ -1,7 +1,9 @@
 import 'package:flutter/material.dart';
 
+import '../core/constants.dart';
 import '../core/theme.dart';
 import '../models/work_site.dart';
+import 'ui.dart';
 
 /// بطاقة عرض موقع عمل للتنفيذ.
 class SiteCard extends StatelessWidget {
@@ -24,9 +26,9 @@ class SiteCard extends StatelessWidget {
       child: ListTile(
         contentPadding:
             const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-        leading: const CircleAvatar(
+        leading: CircleAvatar(
           backgroundColor: AppColors.oliveDark,
-          child: Icon(Icons.engineering, color: AppColors.cream),
+          child: Icon(site.category.icon, color: AppColors.cream),
         ),
         title: Text(
           site.siteName.isEmpty ? site.ownerName : site.siteName,
@@ -37,6 +39,21 @@ class SiteCard extends StatelessWidget {
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
             const SizedBox(height: 4),
+            if (site.category.isPools)
+              Container(
+                margin: const EdgeInsets.only(bottom: 4),
+                padding:
+                    const EdgeInsets.symmetric(horizontal: 8, vertical: 2),
+                decoration: BoxDecoration(
+                  color: AppColors.oliveBright.withValues(alpha: 0.18),
+                  borderRadius: BorderRadius.circular(20),
+                ),
+                child: Text(site.category.labelAr,
+                    style: const TextStyle(
+                        color: AppColors.oliveBright,
+                        fontSize: 11,
+                        fontWeight: FontWeight.bold)),
+              ),
             Text('صاحب المشروع: ${site.ownerName}',
                 style: const TextStyle(color: AppColors.creamDim)),
             if (site.address.isNotEmpty)
@@ -44,12 +61,19 @@ class SiteCard extends StatelessWidget {
                   maxLines: 1,
                   overflow: TextOverflow.ellipsis,
                   style: const TextStyle(color: AppColors.creamDim)),
-            if (showExecutor && (site.executorName ?? '').isNotEmpty)
-              Text('المنفّذ: ${site.executorName}',
+            if (showExecutor && site.executorsLabel.isNotEmpty)
+              Text(
+                  '${site.executorCount > 1 ? 'المنفّذون' : 'المنفّذ'}: ${site.executorsLabel}',
                   style: const TextStyle(color: AppColors.oliveBright)),
-            if (showExecutor && (site.executorName ?? '').isEmpty)
+            if (showExecutor && !site.hasExecutor)
               const Text('لم يُسنَد لمنفّذ بعد',
                   style: TextStyle(color: AppColors.warning)),
+            if (site.autoProgressPercent != null) ...[
+              const SizedBox(height: 8),
+              ProgressBar(
+                  percent: site.autoProgressPercent!,
+                  label: 'نسبة الإنجاز التقديرية'),
+            ],
           ],
         ),
         trailing: onEdit != null

@@ -2,6 +2,7 @@ import 'dart:async';
 
 import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
+import 'package:shared_preferences/shared_preferences.dart';
 
 import '../core/constants.dart';
 import '../models/app_user.dart';
@@ -39,13 +40,57 @@ class AuthController extends ChangeNotifier {
   /// وضع تطوير مؤقّت: جلسة محلية بدور محدّد بدون Firebase Auth.
   bool _localSession = false;
 
+  /// مفتاح حفظ جلسة التطوير عند تفعيل "تذكّرني" (تبقى بعد تحديث الصفحة).
+  static const _devRoleKey = 'devSessionRole';
+  /// مفتاح حفظ جلسة حساب حقيقي يدخل عبر كلمة مرور Firestore (جلسة محلية).
+  static const _localUidKey = 'localSessionUid';
+  bool _checkingDev = true; // ريثما نفحص جلسة تطوير محفوظة قبل إظهار الدخول
+
+  /// انتحال جلسة: الأدمن يدخل حساب مستخدم آخر ويتصرّف كأنه هو.
+  AppUser? _realUser; // ملف الأدمن المحفوظ أثناء الانتحال
+  AppUser? impersonatedUser; // الحساب الجاري تصفّحه (null = لا انتحال)
+  bool get isImpersonating => impersonatedUser != null;
+
   AuthController() {
+    _restoreDevSession();
     _authSub = _auth.authState().listen(_onAuthChanged);
+  }
+
+  /// يستعيد جلسة التطوير المحفوظة (إن فُعّل "تذكّرني") قبل إظهار شاشة الدخول.
+  Future<void> _restoreDevSession() async {
+    try {
+      final prefs = await SharedPreferences.getInstance();
+      final roleId = prefs.getString(_devRoleKey);
+      if (roleId != null && _auth.currentUser == null) {
+        _checkingDev = false;
+        loginLocalRole(UserRoleX.fromId(roleId), remember: true);
+        return;
+      }
+      // جلسة حساب حقيقي عبر كلمة مرور Firestore: نعيد تحميل ملفه ونستأنفها.
+      final localUid = prefs.getString(_localUidKey);
+      if (localUid != null && _auth.currentUser == null) {
+        _checkingDev = false;
+        final u = await _fs.getUser(localUid);
+        if (u != null && u.active) {
+          loginAsUser(u, remember: true);
+          return;
+        }
+        await prefs.remove(_localUidKey); // الملف غاب/عُطّل: امسح الجلسة.
+      }
+    } catch (_) {
+      // نتجاهل أي فشل في القراءة ونكمل لشاشة الدخول.
+    }
+    _checkingDev = false;
+    if (!_localSession && _auth.currentUser == null) {
+      _setStatus(AuthStatus.unauthenticated);
+    }
   }
 
   Future<void> _onAuthChanged(User? user) async {
     // أثناء الجلسة المحلية (تطوير): تجاهل أحداث Firebase الفارغة.
     if (_localSession && user == null) return;
+    // ريثما نفحص جلسة التطوير المحفوظة: لا نُظهر شاشة الدخول بعد.
+    if (_checkingDev && user == null) return;
     _localSession = false;
 
     await _userSub?.cancel();
@@ -65,6 +110,11 @@ class AuthController extends ChangeNotifier {
     _userSub = _fs.userStream(user.uid).listen(
       (profile) {
         _profileTimer?.cancel();
+        // أثناء الانتحال: حدّث ملف الأدمن المحفوظ فقط دون تغيير الجلسة الظاهرة.
+        if (isImpersonating) {
+          if (profile != null) _realUser = profile;
+          return;
+        }
         if (profile != null) {
           appUser = profile;
           _setStatus(profile.active
@@ -81,6 +131,7 @@ class AuthController extends ChangeNotifier {
         });
       },
       onError: (Object _) {
+        if (isImpersonating) return; // لا نُربك جلسة الانتحال بخطأ ملف الأدمن
         _profileTimer?.cancel();
         appUser = null;
         _setStatus(AuthStatus.error);
@@ -101,7 +152,7 @@ class AuthController extends ChangeNotifier {
 
   /// مدخل تطوير مؤقّت: دخول محلي بدور محدّد بدون Firebase Auth،
   /// لتصفّح شاشات الأدوار قبل تجهيز مشروع Firebase حقيقي. يُزال قبل الإطلاق.
-  void loginLocalRole(UserRole role) {
+  void loginLocalRole(UserRole role, {bool remember = false}) {
     _localSession = true;
     _userSub?.cancel();
     _userSub = null;
@@ -113,10 +164,124 @@ class AuthController extends ChangeNotifier {
       phone: role.id,
       role: role,
     );
+    // "تذكّرني": احفظ الدور لتبقى الجلسة بعد التحديث، وإلا امسح أي جلسة محفوظة.
+    SharedPreferences.getInstance().then((p) {
+      if (remember) {
+        p.setString(_devRoleKey, role.id);
+      } else {
+        p.remove(_devRoleKey);
+      }
+    }).ignore();
+    _setStatus(AuthStatus.authenticated);
+  }
+
+  /// دخول موحّد: يحدّد المسار حسب ملف المستخدم. الحسابات التي أعاد المدير ضبط
+  /// كلمة مرورها (useFirestorePassword) يُتحقّق منها عبر تجزئة Firestore وتُفتح
+  /// كجلسة محلية؛ وبقية الحسابات تمرّ بمسار Firebase Auth كالمعتاد.
+  Future<void> login(String identifier, String password,
+      {bool remember = false}) async {
+    final user = await _fs.findUserByLogin(identifier);
+    if (user != null && user.useFirestorePassword) {
+      if (!user.active) {
+        throw const AuthException('هذا الحساب معطّل. تواصل مع الإدارة.');
+      }
+      final cred = await _fs.getCredential(user.uid);
+      // نقصّ كما يُقصّ عند الضبط كي يتطابق الجانبان.
+      final ok = cred != null &&
+          AuthService.verifyCredential(
+              user.uid, password.trim(), cred['salt']!, cred['hash']!);
+      if (!ok) {
+        throw const AuthException('الاسم أو كلمة المرور غير صحيحة.');
+      }
+      loginAsUser(user, remember: remember);
+      return;
+    }
+    await _auth.setRememberMe(remember);
+    await _auth.signIn(identifier, password);
+  }
+
+  /// يفتح جلسة بحساب حقيقي (uid/دور حقيقيان) دون Firebase Auth — تُستخدم بعد
+  /// التحقّق من كلمة مرور Firestore. تُحفظ إن فُعّل "تذكّرني" لتبقى بعد التحديث.
+  /// يربط مستمعاً حيّاً لملف المستخدم كي يسري التعطيل/الحذف فوراً أثناء الجلسة.
+  void loginAsUser(AppUser u, {bool remember = false}) {
+    _localSession = true;
+    _userSub?.cancel();
+    _profileTimer?.cancel();
+    appUser = u;
+    _userSub = _fs.userStream(u.uid).listen(
+      (profile) {
+        if (isImpersonating) return;
+        if (profile == null) {
+          _endLocalSession(); // حُذف الحساب: إنهاء الجلسة.
+          return;
+        }
+        if (!profile.active) {
+          appUser = profile;
+          _clearSavedLocalUid();
+          _setStatus(AuthStatus.disabled); // عُطّل: يُطرد فوراً.
+          return;
+        }
+        appUser = profile;
+        _setStatus(AuthStatus.authenticated);
+      },
+      onError: (Object _) {
+        // قواعد مشدّدة قد تمنع القراءة بلا Firebase Auth — نُبقي الجلسة كما هي.
+      },
+    );
+    SharedPreferences.getInstance().then((p) {
+      if (remember) {
+        p.setString(_localUidKey, u.uid);
+        p.remove(_devRoleKey);
+      } else {
+        p.remove(_localUidKey);
+      }
+    }).ignore();
+    _setStatus(AuthStatus.authenticated);
+  }
+
+  void _clearSavedLocalUid() {
+    SharedPreferences.getInstance()
+        .then((p) => p.remove(_localUidKey))
+        .ignore();
+  }
+
+  void _endLocalSession() {
+    _userSub?.cancel();
+    _userSub = null;
+    _localSession = false;
+    appUser = null;
+    _clearSavedLocalUid();
+    _setStatus(AuthStatus.unauthenticated);
+  }
+
+  /// يدخل الأدمن إلى حساب [target] ويتصرّف كأنه هو (الإجراءات تُنسب إليه).
+  /// يبقى الأدمن مصادَقاً فعلياً، وتُبدَّل فقط الجلسة الظاهرة في التطبيق.
+  void impersonate(AppUser target) {
+    if (appUser?.uid == target.uid) return;
+    _realUser ??= appUser; // احفظ ملف الأدمن أول مرة فقط
+    impersonatedUser = target;
+    appUser = target;
+    _setStatus(AuthStatus.authenticated);
+  }
+
+  /// يعود الأدمن إلى حسابه بعد الانتحال.
+  void stopImpersonating() {
+    if (!isImpersonating) return;
+    if (_realUser != null) appUser = _realUser;
+    _realUser = null;
+    impersonatedUser = null;
     _setStatus(AuthStatus.authenticated);
   }
 
   Future<void> signOut() async {
+    _realUser = null;
+    impersonatedUser = null;
+    // امسح الجلسات المحلية المحفوظة (تطوير/كلمة مرور Firestore) كي لا تُستعاد.
+    try {
+      final p = await SharedPreferences.getInstance();
+      await p.remove(_devRoleKey);
+      await p.remove(_localUidKey);
+    } catch (_) {}
     if (_localSession) {
       _localSession = false;
       appUser = null;

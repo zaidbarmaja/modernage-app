@@ -28,6 +28,15 @@ class StorageService {
     return task.ref.getDownloadURL();
   }
 
+  /// يحذف ملفاً عبر رابط تحميله — لتنظيف صورة يتيمة إن فشلت كتابة المستند بعد
+  /// رفعها. يتجاهل أي فشل (رابط غير صالح/محذوف مسبقاً).
+  Future<void> deleteByUrl(String url) async {
+    if (url.isEmpty) return;
+    try {
+      await _storage.refFromURL(url).delete();
+    } catch (_) {}
+  }
+
   /// يرفع عدة صور ويعيد قائمة الروابط.
   Future<List<String>> uploadImages(List<File> files,
       {String folder = 'work_photos'}) async {

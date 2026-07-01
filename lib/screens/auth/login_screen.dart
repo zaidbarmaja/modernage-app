@@ -1,13 +1,14 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
+import 'package:url_launcher/url_launcher.dart';
 
-import '../../core/constants.dart';
+import '../../core/app_login.dart';
 import '../../core/theme.dart';
 import '../../services/auth_controller.dart';
 import '../../services/auth_service.dart';
 import '../../widgets/app_logo.dart';
 import '../../widgets/ui.dart';
-import 'register_screen.dart';
+import '../legal/privacy_policy_screen.dart';
 
 /// شاشة تسجيل الدخول الموحّدة (T-1.1) — تصميم عصري بهوية التطبيق الزيتونية:
 /// شعار + بطاقة دخول مرتفعة، مع إظهار/إخفاء كلمة المرور، "تذكّرني"،
@@ -26,15 +27,7 @@ class _LoginScreenState extends State<LoginScreen> {
   bool _loading = false;
   bool _obscure = true;
   bool _remember = true;
-
-  // مدخل تطوير مؤقّت: أكواد دخول محلية لكل دور (تُزال قبل الإطلاق).
-  static const _devLogins = <String, UserRole>{
-    'admin': UserRole.admin,
-    'customer': UserRole.customer,
-    'design': UserRole.designEmployee,
-    'exec': UserRole.executionEmployee,
-    'accounting': UserRole.accounting,
-  };
+  bool _agreed = false; // الموافقة على سياسة الخصوصية (شرط للدخول)
 
   @override
   void dispose() {
@@ -45,21 +38,22 @@ class _LoginScreenState extends State<LoginScreen> {
 
   Future<void> _login() async {
     FocusScope.of(context).unfocus();
-    // مدخل تطوير مؤقّت: دخول بأي دور بدون Firebase Auth (الاسم = كلمة المرور).
-    final code = _phone.text.trim().toLowerCase();
-    if (_devLogins.containsKey(code) &&
-        _password.text.trim().toLowerCase() == code) {
-      context
-          .read<AuthController>()
-          .loginLocalRole(_devLogins[code]!, remember: _remember);
+    if (!_agreed) {
+      showSnack(context, 'يجب الموافقة على سياسة الخصوصية أولاً.', error: true);
       return;
     }
-    if (!_formKey.currentState!.validate()) return;
     final auth = context.read<AuthController>();
     setState(() => _loading = true);
     try {
-      // التوجيه: حسابات كلمة مرور Firestore (التي أعاد المدير ضبطها) أو مسار
-      // Firebase Auth — يتولّاه AuthController.login. AuthGate يوجّه حسب الدور.
+      if (!_formKey.currentState!.validate()) return;
+      // دخول المدير: إن طابق الاسمُ اسمَ المدير، تُمرَّر كلمة المرور المُدخلة إلى
+      // Firebase للتحقّق منها مباشرةً (لا تُقارَن بأي قيمة مخزّنة في الكود).
+      if (_phone.text.trim() == AppLogin.username) {
+        await auth.loginCodeAdmin(_password.text, remember: _remember);
+        return;
+      }
+      // بقية الحسابات: كلمة مرور Firestore (ضبطها المدير) أو مسار Firebase Auth —
+      // يتولّاه AuthController.login. AuthGate يوجّه حسب الدور.
       await auth.login(_phone.text, _password.text, remember: _remember);
     } on AuthException catch (e) {
       if (mounted) showSnack(context, e.message, error: true);
@@ -70,6 +64,21 @@ class _LoginScreenState extends State<LoginScreen> {
     } finally {
       if (mounted) setState(() => _loading = false);
     }
+  }
+
+  /// يفتح سياسة الخصوصية المنشورة على الويب في المتصفّح، ويعود للنسخة داخل
+  /// التطبيق إن تعذّر فتح الرابط (بلا إنترنت مثلاً).
+  Future<void> _openPrivacy() async {
+    final uri = Uri.parse(PrivacyPolicyScreen.publicUrl);
+    try {
+      if (await launchUrl(uri, mode: LaunchMode.externalApplication)) return;
+    } catch (_) {
+      // نتجاهل ونعرض النسخة داخل التطبيق كبديل.
+    }
+    if (!mounted) return;
+    Navigator.of(context).push(
+      MaterialPageRoute(builder: (_) => const PrivacyPolicyScreen()),
+    );
   }
 
   void _forgotPassword() {
@@ -136,9 +145,16 @@ class _LoginScreenState extends State<LoginScreen> {
                     _brand(),
                     const SizedBox(height: 22),
                     _card(),
-                    const SizedBox(height: 18),
-                    _devHint(),
-                    const SizedBox(height: 10),
+                    const SizedBox(height: 14),
+                    TextButton.icon(
+                      onPressed: _openPrivacy,
+                      icon: const Icon(Icons.privacy_tip_outlined, size: 16),
+                      label: const Text('سياسة الخصوصية',
+                          style: TextStyle(fontSize: 12)),
+                      style: TextButton.styleFrom(
+                          foregroundColor: AppColors.creamDim),
+                    ),
+                    const SizedBox(height: 4),
                     const Text('الإصدار 1.0  •  عصر الحداثة',
                         style:
                             TextStyle(color: AppColors.creamDim, fontSize: 11)),
@@ -158,7 +174,7 @@ class _LoginScreenState extends State<LoginScreen> {
         Container(
           padding: const EdgeInsets.symmetric(horizontal: 22, vertical: 16),
           decoration: BoxDecoration(
-            color: Colors.black,
+            color: Colors.white,
             borderRadius: BorderRadius.circular(24),
             border: Border.all(color: AppColors.olive.withValues(alpha: 0.5)),
             boxShadow: [
@@ -196,7 +212,7 @@ class _LoginScreenState extends State<LoginScreen> {
       decoration: BoxDecoration(
         color: AppColors.surface,
         borderRadius: BorderRadius.circular(22),
-        border: Border.all(color: const Color(0x26E6EAF0)),
+        border: Border.all(color: const Color(0x26ECEFE1)),
         boxShadow: const [
           BoxShadow(color: Color(0x55000000), blurRadius: 24, offset: Offset(0, 12)),
         ],
@@ -265,11 +281,41 @@ class _LoginScreenState extends State<LoginScreen> {
                 ),
               ],
             ),
-            const SizedBox(height: 12),
+            const SizedBox(height: 4),
+            // شرط الموافقة على سياسة الخصوصية قبل الدخول.
+            Row(
+              children: [
+                Checkbox(
+                  value: _agreed,
+                  onChanged: (v) => setState(() => _agreed = v ?? false),
+                  activeColor: AppColors.olive,
+                  checkColor: AppColors.cream,
+                ),
+                Expanded(
+                  child: Wrap(
+                    crossAxisAlignment: WrapCrossAlignment.center,
+                    children: [
+                      const Text('أوافق على ',
+                          style: TextStyle(
+                              color: AppColors.creamDim, fontSize: 13)),
+                      InkWell(
+                        onTap: _openPrivacy,
+                        child: const Text('سياسة الخصوصية',
+                            style: TextStyle(
+                                color: AppColors.oliveBright,
+                                fontSize: 13,
+                                decoration: TextDecoration.underline)),
+                      ),
+                    ],
+                  ),
+                ),
+              ],
+            ),
+            const SizedBox(height: 8),
             SizedBox(
               height: 52,
               child: ElevatedButton.icon(
-                onPressed: _loading ? null : _login,
+                onPressed: (_loading || !_agreed) ? null : _login,
                 icon: _loading
                     ? const SizedBox.shrink()
                     : const Icon(Icons.login),
@@ -284,55 +330,8 @@ class _LoginScreenState extends State<LoginScreen> {
                             fontSize: 16, fontWeight: FontWeight.w700)),
               ),
             ),
-            const SizedBox(height: 16),
-            Row(
-              children: const [
-                Expanded(child: Divider(color: Color(0x22E6EAF0))),
-                Padding(
-                  padding: EdgeInsets.symmetric(horizontal: 10),
-                  child: Text('أو',
-                      style: TextStyle(color: AppColors.creamDim, fontSize: 12)),
-                ),
-                Expanded(child: Divider(color: Color(0x22E6EAF0))),
-              ],
-            ),
-            const SizedBox(height: 12),
-            OutlinedButton.icon(
-              onPressed: _loading
-                  ? null
-                  : () => Navigator.of(context).push(
-                        MaterialPageRoute(
-                            builder: (_) => const RegisterScreen()),
-                      ),
-              icon: const Icon(Icons.admin_panel_settings_outlined, size: 20),
-              label: const Text('إعداد حساب المدير (أول مرة)'),
-            ),
           ],
         ),
-      ),
-    );
-  }
-
-  Widget _devHint() {
-    return Container(
-      padding: const EdgeInsets.symmetric(horizontal: 12, vertical: 8),
-      decoration: BoxDecoration(
-        color: AppColors.surface.withValues(alpha: 0.5),
-        borderRadius: BorderRadius.circular(12),
-        border: Border.all(color: const Color(0x18E6EAF0)),
-      ),
-      child: const Row(
-        mainAxisSize: MainAxisSize.min,
-        children: [
-          Icon(Icons.science_outlined, size: 16, color: AppColors.creamDim),
-          SizedBox(width: 8),
-          Flexible(
-            child: Text(
-              'للتجربة (الاسم = كلمة المرور): admin · customer · design · exec · accounting',
-              style: TextStyle(color: AppColors.creamDim, fontSize: 11),
-            ),
-          ),
-        ],
       ),
     );
   }

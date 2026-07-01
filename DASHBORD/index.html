@@ -1,0 +1,95 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+  <meta charset="UTF-8">
+  <meta name="viewport" content="width=device-width, initial-scale=1.0">
+  <title>عصر الحداثة — لوحة تحكم مدير النظام</title>
+  <link rel="icon" type="image/png" href="favicon.png">
+  <link rel="preconnect" href="https://fonts.googleapis.com">
+  <link rel="preconnect" href="https://fonts.gstatic.com" crossorigin>
+  <link href="https://fonts.googleapis.com/css2?family=Tajawal:wght@400;500;700;800&family=Cairo:wght@400;600;700;800&display=swap" rel="stylesheet">
+  <link rel="stylesheet" href="styles.css">
+</head>
+<body>
+
+  <!-- ===================== شاشة الدخول (مُعطّلة — دخول مباشر بلا تسجيل) ===================== -->
+  <div id="login-screen" class="login-screen" hidden>
+    <div class="login-card">
+      <div class="login-brand">
+        <div class="brand-logo">ع.ح</div>
+        <h1>عصر الحداثة</h1>
+        <p class="brand-sub">لوحة تحكم مدير النظام</p>
+      </div>
+      <form id="login-form" class="login-form" autocomplete="on">
+        <h2>تسجيل الدخول</h2>
+        <div class="form-row">
+          <label for="login-user">اسم المستخدم</label>
+          <input type="text" id="login-user" placeholder="اسم المستخدم" autocomplete="username" required>
+        </div>
+        <div class="form-row">
+          <label for="login-pass">كلمة المرور</label>
+          <input type="password" id="login-pass" placeholder="••••••••" autocomplete="current-password" required>
+        </div>
+        <label class="login-remember">
+          <input type="checkbox" id="login-remember" checked> تذكّرني على هذا الجهاز
+        </label>
+        <p id="login-error" class="login-error" role="alert"></p>
+        <button type="submit" id="login-submit" class="btn btn--primary btn--block">دخول</button>
+      </form>
+      <footer class="login-foot">نظام «عصر الحداثة» — إدارة المشاريع والحضور</footer>
+    </div>
+  </div>
+
+  <!-- ===================== اللوحة ===================== -->
+  <div id="app" class="layout" hidden>
+    <div class="sidebar-backdrop" id="sidebar-backdrop"></div>
+    <aside class="sidebar" id="sidebar">
+      <div class="sidebar__brand">
+        <div class="brand-logo">ع.ح</div>
+        <div>
+          <b>عصر الحداثة</b>
+          <span>لوحة الإدارة</span>
+        </div>
+      </div>
+      <nav class="nav" id="nav">
+        <button class="nav__item" data-page="overview">نظرة عامة</button>
+        <button class="nav__item" data-page="projects">المشاريع والمواقع</button>
+        <button class="nav__item" data-page="reports">التقارير</button>
+        <button class="nav__item" data-page="attendance">البصمة والحضور</button>
+        <button class="nav__item" data-page="finance">المالية</button>
+        <button class="nav__item" data-page="users">المستخدمون</button>
+        <button class="nav__item" data-page="notifications">الإشعارات</button>
+        <button class="nav__item" data-page="settings">إعدادات الشركة</button>
+      </nav>
+      <div class="sidebar__foot">
+        <div class="user-chip">
+          <div class="avatar">م</div>
+          <div>
+            <b id="side-user-name">مدير النظام</b>
+            <span>الحساب الأساسي</span>
+          </div>
+        </div>
+        <a href="../index.html" class="btn btn--ghost btn--block btn--sm nav-back">← العودة إلى الحسابات</a>
+      </div>
+    </aside>
+
+    <main class="content">
+      <div class="topbar">
+        <button class="icon-btn menu-toggle" id="menu-toggle">☰</button>
+        <div>
+          <h1 id="page-title">نظرة عامة</h1>
+          <div class="sub" id="page-sub">لوحة تحكم مدير النظام</div>
+        </div>
+        <div class="spacer"></div>
+        <button class="icon-btn" id="topbar-notif" title="الإشعارات">🔔<span class="dot" id="notif-dot" hidden>0</span></button>
+      </div>
+      <div class="page-wrap" id="page"></div>
+    </main>
+  </div>
+
+  <div id="toast-container" class="toast-container"></div>
+  <div id="modal-root"></div>
+
+  <script type="module" src="js/app.js"></script>
+</body>
+</html>

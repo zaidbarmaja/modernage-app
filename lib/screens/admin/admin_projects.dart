@@ -279,11 +279,13 @@ class _AdminProjectsViewState extends State<AdminProjectsView> {
                       MaterialPageRoute(
                           builder: (_) => AddSiteForm(existing: s)),
                     ),
+                    // interactive: تتيح للإدارة إصدار الوصولات (قبض/صرف) وكتابة
+                    // التقارير من داخل مشروع التنفيذ.
                     onTap: () => Navigator.push(
                       context,
                       MaterialPageRoute(
                         builder: (_) => SiteDetailScreen(
-                            site: s, user: widget.user, interactive: false),
+                            site: s, user: widget.user, interactive: true),
                       ),
                     ),
                   )),

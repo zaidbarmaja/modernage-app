@@ -26,6 +26,13 @@ class SiteCheckin {
     required this.time,
   });
 
+  static DateTime? _toDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
   factory SiteCheckin.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
     return SiteCheckin(
@@ -38,7 +45,7 @@ class SiteCheckin {
       lat: ((m['lat'] as num?) ?? 0).toDouble(),
       lng: ((m['lng'] as num?) ?? 0).toDouble(),
       address: (m['address'] ?? '') as String,
-      time: (m['time'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      time: _toDate(m['time']) ?? DateTime.now(),
     );
   }
 

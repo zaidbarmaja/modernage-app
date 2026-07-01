@@ -7,7 +7,7 @@
 	<key>CFBundleDevelopmentRegion</key>
 	<string>$(DEVELOPMENT_LANGUAGE)</string>
 	<key>CFBundleDisplayName</key>
-	<string>Mohameed App</string>
+	<string>عصر الحداثة</string>
 	<key>CFBundleExecutable</key>
 	<string>$(EXECUTABLE_NAME)</string>
 	<key>CFBundleIdentifier</key>
@@ -15,7 +15,7 @@
 	<key>CFBundleInfoDictionaryVersion</key>
 	<string>6.0</string>
 	<key>CFBundleName</key>
-	<string>mohameed_app</string>
+	<string>ModernAge</string>
 	<key>CFBundlePackageType</key>
 	<string>APPL</string>
 	<key>CFBundleShortVersionString</key>
@@ -66,5 +66,26 @@
 		<string>UIInterfaceOrientationLandscapeLeft</string>
 		<string>UIInterfaceOrientationLandscapeRight</string>
 	</array>
+	<!-- أوصاف أذونات الخصوصية — إلزامية من Apple، وغيابها يُسبّب انهيار التطبيق ورفضه. -->
+	<key>NSCameraUsageDescription</key>
+	<string>نحتاج إذن الكاميرا لالتقاط صور الإيصالات وتقارير العمل.</string>
+	<key>NSPhotoLibraryUsageDescription</key>
+	<string>نحتاج الوصول إلى صورك لإرفاق الإيصالات والتقارير من معرض جهازك.</string>
+	<key>NSPhotoLibraryAddUsageDescription</key>
+	<string>نحتاج الإذن لحفظ التقارير والمستندات في معرض الصور.</string>
+	<!-- الموقع «أثناء الاستخدام» فقط: يُطلب لحظة ضغط الموظف على زر تسجيل الحضور/الانصراف. لا تتبّع في الخلفية. -->
+	<key>NSLocationWhenInUseUsageDescription</key>
+	<string>نستخدم موقعك لحظة ضغطك على زر تسجيل الحضور أو الانصراف فقط، للتأكّد من وجودك في موقع العمل. لا نتتبّع موقعك في الخلفية.</string>
+	<!-- البصمة/Face ID للتحقّق من هويتك قبل تسجيل الحضور — تتم على جهازك ولا نطّلع عليها. -->
+	<key>NSFaceIDUsageDescription</key>
+	<string>نستخدم بصمة الوجه (Face ID) للتحقّق من هويتك قبل تسجيل الحضور أو الانصراف. تتم المصادقة على جهازك، ولا نطّلع على بياناتك الحيوية ولا نخزّنها.</string>
+	<!-- وضع الخلفية لاستقبال الإشعارات الفورية (Push/FCM). -->
+	<key>UIBackgroundModes</key>
+	<array>
+		<string>remote-notification</string>
+	</array>
+	<!-- الامتثال للتصدير: التطبيق لا يستخدم تشفيرًا خاصًا غير معفى، لتفادي سؤال كل رفع. -->
+	<key>ITSAppUsesNonExemptEncryption</key>
+	<false/>
 </dict>
 </plist>

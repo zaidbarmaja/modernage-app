@@ -1,117 +1,37 @@
 rules_version = '2';
 
-// قواعد أمان «عصر الحداثة» (T-4.7): كل دور يصل لبياناته فقط.
-// ملاحظة مهمة: هذه القواعد للإنتاج وتتطلّب تسجيل دخول حقيقي عبر Firebase Auth.
-// قبل نشرها: أزِل الدخول التجريبي المحلي (admin/admin…) فهو بلا Firebase Auth،
-// وستمنعه هذه القواعد. تُنشَر عبر: firebase deploy --only firestore:rules
-// أو من كونسول Firebase ← Firestore ← Rules.
+// ===============================================================
+//  قواعد أمان موحّدة — مشروع mohmeed-kadim المشترك بين:
+//   • تطبيق Flutter (عصر الحداثة): users, projects, sites, attendance,
+//     daily_reports, receipts, employees, customers, customerTransactions ...
+//   • تطبيق الويب (modage): customers, departments, customerTransactions,
+//     companyTransactions, auditLog.
 //
-// قيد معروف — الدخول بالهاتف البديل: `findAuthEmailByLogin` يقرأ مجموعة users
-// قبل المصادقة، وهو ممنوع هنا. لذا تحت هذه القواعد: يدخل الطاقم باسمه (مُعرّف
-// الإنشاء) والزبون برقمه (مُعرّف إنشائه) فيعمل التحويل المباشر. الدخول بهاتف
-// بديل مختلف عن مُعرّف الإنشاء يحتاج مجموعة عامة `loginIndex` (مفتاح→بريد
-// اصطناعي) تُقرأ قبل المصادقة — تُضاف لاحقاً عند الحاجة.
+//  النموذج: مدير واحد مُتحكَّم به من الكود (lib/core/app_login.dart) يدخل عبر
+//  Firebase Auth. يُسمح لأي مستخدم مسجّل بالقراءة/الكتابة على كل المجموعات،
+//  عدا سجل التغييرات auditLog (إنشاء فقط — غير قابل للتعديل أو الحذف).
+//  غير المسجّلين: لا قراءة ولا كتابة.
+// ===============================================================
 service cloud.firestore {
   match /databases/{database}/documents {
 
     function signedIn() {
       return request.auth != null;
     }
-    function hasProfile() {
-      return signedIn() &&
-        exists(/databases/$(database)/documents/users/$(request.auth.uid));
-    }
-    function myRole() {
-      return hasProfile()
-        ? get(/databases/$(database)/documents/users/$(request.auth.uid)).data.role
-        : '';
-    }
-    function isAdmin() { return myRole() == 'admin'; }
-    // الطاقم: إدارة/محاسبة/تصميم/تنفيذ (لهم وصول تشغيلي).
-    function isStaff() {
-      return myRole() in
-        ['admin', 'accounting', 'designEmployee', 'executionEmployee'];
-    }
-    // ملكية الزبون لوثيقة عبر حقل معيّن.
-    function ownsField(field) {
-      return signedIn() && resource.data[field] == request.auth.uid;
+
+    // قراءة أي مستند للمستخدم المسجّل.
+    match /{document=**} {
+      allow read: if signedIn();
     }
 
-    // ----------------------------- المستخدمون -----------------------------
-    // يقرأ المرء ملفه، والطاقم يقرأ الجميع.
-    // الإنشاء/التعديل/الحذف للمدير فقط — لا إنشاء ذاتي (سدّ تصعيد الصلاحيات:
-    // لا يستطيع مستخدم بلا ملف إنشاء ملفه بدور admin).
-    // **أول مدير (bootstrap):** يُنشأ ملفه مرّة واحدة يدوياً من كونسول Firestore
-    // (أو عبر Admin SDK) بدور admin، ثم تتولّى اللوحة إنشاء بقية الحسابات.
-    match /users/{userId} {
-      allow read: if signedIn() && (request.auth.uid == userId || isStaff());
-      allow create, delete: if isAdmin();
-      // المدير يعدّل أي ملف؛ ويعدّل المستخدمُ ملفَه (الاسم/الهاتف/التواصل) دون
-      // تغيير دوره أو حالة تفعيله (سدّ تصعيد الصلاحيات).
-      allow update: if isAdmin() ||
-          (request.auth != null && request.auth.uid == userId
-           && request.resource.data.role == resource.data.role
-           && request.resource.data.active == resource.data.active);
+    // سجل التغييرات (تطبيق الويب): إنشاء فقط — يبقى غير قابل للتعديل أو الحذف.
+    match /auditLog/{id} {
+      allow create: if signedIn();
     }
 
-    // بيانات اعتماد كلمة المرور (ملح + تجزئة) — لا يقرأها أي عميل إطلاقاً (تمنع
-    // تسريب التجزئة لأي مستخدم/طاقم). الكتابة للمدير فقط. ملاحظة: الدخول بكلمة
-    // مرور Firestore يقرأ هذه قبل المصادقة، فيعمل في وضع الاختبار المفتوح فقط؛
-    // وتشديد القواعد لاحقاً يتطلّب نقل التحقّق إلى دالة سحابية (Admin SDK).
-    match /credentials/{uid} {
-      allow read: if false;
-      // المدير يضبط أي اعتماد؛ ويستطيع المستخدم تغيير اعتماده هو (تغيير رمزه).
-      allow write: if isAdmin() ||
-          (request.auth != null && request.auth.uid == uid);
+    // الكتابة على أي مجموعة (عدا auditLog) للمستخدم المسجّل.
+    match /{col}/{docId} {
+      allow write: if signedIn() && col != 'auditLog';
     }
-
-    // ------------------ بيانات يطّلع عليها الزبون (ملكيته) ------------------
-    // الزبون يستعلم دائماً بحقل customerUid == uid (استعلام مُقيَّد)، فيُسمح له.
-    match /projects/{id} {
-      allow read: if isStaff() || ownsField('customerUid');
-      allow write: if isStaff();
-    }
-    match /sites/{id} {
-      allow read: if isStaff() || ownsField('customerUid');
-      allow write: if isStaff();
-    }
-    match /receipts/{id} {
-      allow read: if isStaff() || ownsField('customerUid');
-      allow create, update, delete: if isStaff();
-    }
-    match /daily_reports/{id} {
-      allow read: if isStaff() || ownsField('customerUid');
-      allow write: if isStaff();
-    }
-
-    // ------------------------------ الإشعارات ------------------------------
-    // الزبون يقرأ ما وُجِّه إليه (toUid)؛ الطاقم يقرأ الكل. تعليم المقروء للمستلِم.
-    match /notifications/{id} {
-      allow read: if isStaff() || ownsField('toUid');
-      allow create: if isStaff();
-      allow update: if isStaff() || ownsField('toUid');
-      allow delete: if isAdmin();
-    }
-
-    // -------------------- بيانات تشغيلية داخلية (الطاقم) --------------------
-    // الحضور/الصرفيات/دخول المواقع — لا يراها الزبون.
-    match /attendance/{id} { allow read, write: if isStaff(); }
-    match /expenses/{id} { allow read, write: if isStaff(); }
-    match /site_checkins/{id} { allow read, write: if isStaff(); }
-    // تقارير التنفيذ: الطاقم يكتب ويقرأ الكل؛ والزبون يقرأ تقارير مواقعه فقط
-    // (استعلام مُقيَّد بـ customerUid). الكتابة تبقى للطاقم حصراً.
-    match /execution_reports/{id} {
-      allow read: if isStaff() || ownsField('customerUid');
-      allow write: if isStaff();
-    }
-
-    // إعدادات الشركة (مستند settings/company): موقع البصمة وأوقات الدوام —
-    // يقرؤها الطاقم (لجدولة الحضور والتذكير) ويكتبها المدير فقط.
-    match /settings/{id} {
-      allow read: if isStaff();
-      allow write: if isAdmin();
-    }
-
-    // كل ما عدا ذلك مرفوض افتراضياً (لا حاجة لقاعدة صريحة).
   }
 }

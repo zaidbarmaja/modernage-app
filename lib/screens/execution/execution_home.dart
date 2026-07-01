@@ -6,13 +6,15 @@ import '../../models/app_user.dart';
 import '../../models/work_site.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/app_actions.dart';
+import '../../widgets/notifications_view.dart';
 import '../../widgets/site_card.dart';
 import '../../widgets/ui.dart';
 import '../attendance/attendance_view.dart';
-import '../reports/daily_reports_view.dart';
 import 'site_detail_screen.dart';
 
-/// الصفحة الرئيسية لموظف التنفيذ: البصمة + مواقع العمل المسندة إليه.
+/// الصفحة الرئيسية لموظف التنفيذ: تبويبان فقط — «الرئيسية» (ملخّص) و«مواقعي».
+/// كل العمليات (تسجيل الدخول/البصمة، التقارير، الوصولات) تتم بالضغط على الموقع
+/// من تبويب «مواقعي». الصفحة الرئيسية تعرض الملخّص فقط بلا بصمة.
 class ExecutionHome extends StatefulWidget {
   final AppUser user;
   const ExecutionHome({super.key, required this.user});
@@ -26,17 +28,33 @@ class _ExecutionHomeState extends State<ExecutionHome> {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = [
-      AttendanceTab(user: widget.user),
-      _SitesTab(user: widget.user),
-      DailyReportsView(user: widget.user),
-    ];
     return Scaffold(
       appBar: AppBar(
-        title: Text(const ['البصمة', 'مواقع العمل', 'تقاريري'][_index]),
-        actions: const [LogoutAction()],
+        title: Text(const ['الرئيسية', 'مواقعي'][_index]),
+        actions: [
+          IconButton(
+            tooltip: 'الإشعارات',
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('الإشعارات')),
+                  body: NotificationsView(
+                      stream: FirestoreService()
+                          .notificationsForUser(widget.user.uid)),
+                ),
+              ),
+            ),
+          ),
+          const LogoutAction(),
+        ],
       ),
-      body: IndexedStack(index: _index, children: tabs),
+      // بناء كسول: يُبنى التبويب الظاهر فقط لتقليل قراءات Firestore.
+      // «الرئيسية» تعرض ملخّص الحضور بنفس مكوّن صفحة موظف التصميم (AttendanceTab).
+      body: _index == 0
+          ? AttendanceTab(user: widget.user)
+          : _SitesTab(user: widget.user),
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),
@@ -44,18 +62,18 @@ class _ExecutionHomeState extends State<ExecutionHome> {
         indicatorColor: AppColors.olive,
         destinations: const [
           NavigationDestination(
-              icon: Icon(Icons.fingerprint), label: 'البصمة'),
+              icon: Icon(Icons.home_outlined),
+              selectedIcon: Icon(Icons.home),
+              label: 'الرئيسية'),
           NavigationDestination(
               icon: Icon(Icons.engineering), label: 'مواقعي'),
-          NavigationDestination(
-              icon: Icon(Icons.event_note), label: 'تقاريري'),
         ],
-
       ),
     );
   }
 }
 
+/// تبويب «مواقعي»: مواقع العمل المسندة للموظف، مجمّعة حسب الفئة.
 class _SitesTab extends StatelessWidget {
   final AppUser user;
   const _SitesTab({required this.user});

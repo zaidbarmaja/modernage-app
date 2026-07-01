@@ -26,7 +26,9 @@ class ReceiptPdf {
     pw.ImageProvider? image;
     if (r.imageUrl.isNotEmpty) {
       try {
-        image = await networkImage(r.imageUrl);
+        // مهلة قصيرة كي لا تتعلّق المشاركة إن كانت الصورة بطيئة/غير متاحة.
+        image = await networkImage(r.imageUrl)
+            .timeout(const Duration(seconds: 8));
       } catch (_) {
         image = null; // قد يتعذّر جلب الصورة بلا إنترنت — نتجاهلها.
       }
@@ -57,6 +59,7 @@ class ReceiptPdf {
           pw.SizedBox(height: 18),
           _row('التاريخ', Fmt.date(r.date)),
           _row('صاحب المشروع', r.ownerName.isEmpty ? '—' : r.ownerName),
+          if (r.recipient.isNotEmpty) _row('المستلِم', r.recipient),
           _row('الموقع', r.siteName.isEmpty ? '—' : r.siteName),
           _row('الوصف', r.description.isEmpty ? '—' : r.description),
           _row('المُصدِر', r.createdByName.isEmpty ? '—' : r.createdByName),

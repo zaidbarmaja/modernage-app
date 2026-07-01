@@ -7,8 +7,8 @@ import '../../models/design_project.dart';
 import '../../models/work_site.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
+import '../../widgets/account_customer_picker.dart';
 import '../../widgets/ui.dart';
-import '../../widgets/user_dropdown.dart';
 
 /// نموذج إضافة/تعديل موقع عمل للتنفيذ (الإدارة حسب التصميم).
 class AddSiteForm extends StatefulWidget {
@@ -316,6 +316,12 @@ class _AddSiteFormState extends State<AddSiteForm> {
                       setState(() => _category = v ?? _category),
                 ),
                 const SizedBox(height: 14),
+                AccountCustomerPicker(
+                  selectedName:
+                      _owner.text.trim().isEmpty ? null : _owner.text.trim(),
+                  onSelected: (name) => setState(() => _owner.text = name),
+                ),
+                const SizedBox(height: 14),
                 TextFormField(
                   controller: _owner,
                   decoration: const InputDecoration(
@@ -435,14 +441,6 @@ class _AddSiteFormState extends State<AddSiteForm> {
                 ),
                 const SizedBox(height: 14),
                 _executorsPicker(),
-                const SizedBox(height: 14),
-                UserDropdown(
-                  role: UserRole.customer,
-                  selectedUid: _customerUid,
-                  label: 'ربط بحساب الزبون (اختياري)',
-                  icon: Icons.link,
-                  onChanged: (u) => setState(() => _customerUid = u?.uid),
-                ),
                 const SizedBox(height: 26),
                 ElevatedButton.icon(
                   onPressed: _busy ? null : _save,

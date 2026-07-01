@@ -10,12 +10,21 @@ class AppLogo extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    return Image.asset(
-      'assets/images/logo.png',
+    // الشعار مصمَّم لخلفية بيضاء، فنعرضه داخل بطاقة بيضاء ليبقى واضحاً على
+    // الثيم الداكن في كل الشاشات (البداية، لوحة التحكم، شاشة الإعداد).
+    return Container(
       width: size,
       height: size,
-      fit: BoxFit.contain,
-      errorBuilder: (context, error, stack) => _FallbackLogo(size: size),
+      padding: EdgeInsets.all(size * 0.1),
+      decoration: BoxDecoration(
+        color: Colors.white,
+        borderRadius: BorderRadius.circular(size * 0.22),
+      ),
+      child: Image.asset(
+        'assets/images/logo.png',
+        fit: BoxFit.contain,
+        errorBuilder: (context, error, stack) => _FallbackLogo(size: size),
+      ),
     );
   }
 }

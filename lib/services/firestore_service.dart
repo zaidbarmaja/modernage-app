@@ -12,6 +12,7 @@ import '../models/design_project.dart';
 import '../models/execution_report.dart';
 import '../models/expense.dart';
 import '../models/receipt.dart';
+import '../models/scheduled_reminder.dart';
 import '../models/site_checkin.dart';
 import '../models/work_site.dart';
 
@@ -177,6 +178,16 @@ class FirestoreService {
   Future<void> deleteUser(String uid) =>
       _col(FsCollections.users).doc(uid).delete();
 
+  /// حذف نهائي لهوية الحساب: ملف المستخدم + بيانات الاعتماد (كلمة المرور).
+  /// يحرّر اسم/رقم الدخول لإعادة الاستخدام (الإنشاء لاحقاً يولّد بريد مصادقة
+  /// فريداً تلقائياً إن بقي حساب Auth قديم لا يمكن حذفه من جهة العميل).
+  Future<void> deleteUserPermanently(String uid) async {
+    final batch = _db.batch();
+    batch.delete(_col(FsCollections.users).doc(uid));
+    batch.delete(_col(FsCollections.credentials).doc(uid));
+    await batch.commit();
+  }
+
   // ------------------------------- البصمة -------------------------------
 
   String _attDocId(String uid, DateTime day) =>
@@ -189,6 +200,13 @@ class FirestoreService {
         .doc(id)
         .snapshots()
         .map((d) => d.exists ? AttendanceRecord.fromDoc(d) : null);
+  }
+
+  /// قراءة سجل بصمة اليوم مرّة واحدة (تُستخدم من خدمة البصمة التلقائية بالخلفية).
+  Future<AttendanceRecord?> todayAttendanceOnce(String uid) async {
+    final id = _attDocId(uid, DateTime.now());
+    final doc = await _col(FsCollections.attendance).doc(id).get();
+    return doc.exists ? AttendanceRecord.fromDoc(doc) : null;
   }
 
   /// تسجيل دخول (بصمة دخول).
@@ -223,9 +241,19 @@ class FirestoreService {
   Stream<List<AttendanceRecord>> allAttendance() =>
       _col(FsCollections.attendance).snapshots().map(_mapAttendance);
 
+  /// حذف سجل بصمة (للمدير من إدارة البيانات).
+  Future<void> deleteAttendance(String id) =>
+      _col(FsCollections.attendance).doc(id).delete();
+
   List<AttendanceRecord> _mapAttendance(
       QuerySnapshot<Map<String, dynamic>> s) {
-    final list = s.docs.map(AttendanceRecord.fromDoc).toList();
+    // نتخطّى أي سجل لا يمكن تحويله (بيانات قديمة/تالفة) بدل إفشال القائمة.
+    final list = <AttendanceRecord>[];
+    for (final d in s.docs) {
+      try {
+        list.add(AttendanceRecord.fromDoc(d));
+      } catch (_) {}
+    }
     list.sort((a, b) => b.checkIn.compareTo(a.checkIn));
     return list;
   }
@@ -433,6 +461,10 @@ class FirestoreService {
   Stream<List<DailyReport>> allDailyReports() =>
       _col(FsCollections.dailyReports).snapshots().map(_mapDailyReports);
 
+  /// حذف تقرير يومي (للمدير من إدارة البيانات).
+  Future<void> deleteDailyReport(String id) =>
+      _col(FsCollections.dailyReports).doc(id).delete();
+
   /// تقارير مشاريع زبون معيّن (لبوابة الزبون — T-4.4)؛ يُرشّح بـ customerUid
   /// مباشرةً فيعمل تحت قواعد الأمان ولا يقرأ تقارير غيره.
   Stream<List<DailyReport>> dailyReportsByCustomer(String customerUid) =>
@@ -498,7 +530,8 @@ class FirestoreService {
 
   // ------------------------- الوصولات الإلكترونية -------------------------
 
-  Future<void> addReceipt(Receipt r) =>
+  /// يضيف وصلاً ويُرجع مرجعه (لربط نسخته المرآة في الحسابات عبر receiptId).
+  Future<DocumentReference<Map<String, dynamic>>> addReceipt(Receipt r) =>
       _col(FsCollections.receipts).add(r.toMap());
 
   Stream<List<Receipt>> receiptsBySite(String siteId) =>
@@ -522,8 +555,26 @@ class FirestoreService {
   Stream<List<Receipt>> allReceipts() =>
       _col(FsCollections.receipts).snapshots().map(_mapReceipts);
 
-  Future<void> deleteReceipt(String id) =>
-      _col(FsCollections.receipts).doc(id).delete();
+  /// حذف وصل + نسخته المرآة في حسابات المحاسبة (customerTransactions) معًا،
+  /// كي يختفي من كل مكان عند الحذف من التطبيق أو اللوحة.
+  Future<void> deleteReceipt(String id) async {
+    final batch = _db.batch();
+    batch.delete(_col(FsCollections.receipts).doc(id));
+    await _addMirrorDeletes(batch, id);
+    await batch.commit();
+  }
+
+  /// يضيف حذف نسخ الوصل المرآة (customerTransactions حيث receiptId == id) للدفعة.
+  Future<void> _addMirrorDeletes(WriteBatch batch, String receiptId) async {
+    if (receiptId.isEmpty) return;
+    final mirror = await _db
+        .collection('customerTransactions')
+        .where('receiptId', isEqualTo: receiptId)
+        .get();
+    for (final m in mirror.docs) {
+      batch.delete(m.reference);
+    }
+  }
 
   /// حذف موقع تنفيذ مع كل ما يتبعه (وصولات/تقارير/صرفيات/تسجيلات دخول) دفعةً
   /// واحدة كي لا تبقى سجلّات يتيمة تشوّه الإجماليات.
@@ -539,6 +590,8 @@ class FirestoreService {
       final snap = await _col(c).where('siteId', isEqualTo: siteId).get();
       for (final d in snap.docs) {
         batch.delete(d.reference);
+        // حذف نسخ الوصولات المرآة أيضًا عند حذف الموقع.
+        if (c == FsCollections.receipts) await _addMirrorDeletes(batch, d.id);
       }
     }
     await batch.commit();
@@ -553,6 +606,7 @@ class FirestoreService {
       final snap = await _col(c).where('projectId', isEqualTo: projectId).get();
       for (final d in snap.docs) {
         batch.delete(d.reference);
+        if (c == FsCollections.receipts) await _addMirrorDeletes(batch, d.id);
       }
     }
     final sites =
@@ -564,7 +618,13 @@ class FirestoreService {
   }
 
   List<Receipt> _mapReceipts(QuerySnapshot<Map<String, dynamic>> s) {
-    final list = s.docs.map(Receipt.fromDoc).toList();
+    // نتخطّى أي مستند لا يمكن تحويله (بيانات قديمة/تالفة) بدل إفشال القائمة كلها.
+    final list = <Receipt>[];
+    for (final d in s.docs) {
+      try {
+        list.add(Receipt.fromDoc(d));
+      } catch (_) {}
+    }
     list.sort((a, b) => b.date.compareTo(a.date));
     return list;
   }
@@ -637,4 +697,27 @@ class FirestoreService {
       _col(FsCollections.settings)
           .doc('company')
           .set(s.toMap(), SetOptions(merge: true));
+
+  // ------------------- رموز الإشعارات الفورية (FCM) -------------------
+
+  /// يحفظ رمز جهاز المستخدم (FCM token) في ملفه لإرسال الإشعارات الفورية إليه.
+  Future<void> saveFcmToken(String uid, String token) =>
+      _col(FsCollections.users).doc(uid).set({
+        'fcmTokens': FieldValue.arrayUnion([token]),
+      }, SetOptions(merge: true));
+
+  // ------------------- التنبيهات اليومية المجدولة -------------------
+
+  /// قراءة لمرّة واحدة للتنبيهات المجدولة (يديرها المدير من الداشبورد) — يستخدمها
+  /// التطبيق لجدولة إشعارات محلية على جهاز الموظف عند الدخول.
+  Future<List<ScheduledReminder>> scheduledRemindersOnce() async {
+    final snap = await _col(FsCollections.scheduledReminders).get();
+    final list = <ScheduledReminder>[];
+    for (final d in snap.docs) {
+      try {
+        list.add(ScheduledReminder.fromDoc(d));
+      } catch (_) {}
+    }
+    return list;
+  }
 }

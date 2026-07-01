@@ -34,18 +34,29 @@ class AttendanceRecord {
     this.checkOutLng,
   });
 
+  /// يحوّل قيمة تاريخ سواء كانت Timestamp أو نصًا ISO أو DateTime (للتوافق مع
+  /// سجلات البصمة القديمة التي خُزِّن تاريخها كنصّ).
+  static DateTime? _toDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
   factory AttendanceRecord.fromDoc(
       DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
     return AttendanceRecord(
       id: doc.id,
-      uid: (m['uid'] ?? '') as String,
-      userName: (m['userName'] ?? '') as String,
+      uid: (m['uid'] ?? m['employeeId'] ?? '') as String,
+      userName: (m['userName'] ?? m['name'] ?? '') as String,
       department: DepartmentX.fromId(m['department'] as String?),
-      workStartMin: (m['workStartMin'] as num?)?.toInt() ?? 8 * 60,
-      workEndMin: (m['workEndMin'] as num?)?.toInt() ?? 16 * 60,
-      checkIn: (m['checkIn'] as Timestamp).toDate(),
-      checkOut: (m['checkOut'] as Timestamp?)?.toDate(),
+      workStartMin:
+          (m['workStartMin'] as num?)?.toInt() ?? (m['workStart'] as num?)?.toInt() ?? 8 * 60,
+      workEndMin:
+          (m['workEndMin'] as num?)?.toInt() ?? (m['workEnd'] as num?)?.toInt() ?? 16 * 60,
+      checkIn: _toDate(m['checkIn']) ?? _toDate(m['createdAt']) ?? DateTime.now(),
+      checkOut: _toDate(m['checkOut']),
       checkInLat: (m['checkInLat'] as num?)?.toDouble(),
       checkInLng: (m['checkInLng'] as num?)?.toDouble(),
       checkOutLat: (m['checkOutLat'] as num?)?.toDouble(),

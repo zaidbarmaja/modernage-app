@@ -5,6 +5,7 @@ import '../../models/app_user.dart';
 import '../../models/design_project.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/app_actions.dart';
+import '../../widgets/notifications_view.dart';
 import '../../widgets/project_card.dart';
 import '../../widgets/ui.dart';
 import '../attendance/attendance_view.dart';
@@ -34,7 +35,24 @@ class _DesignHomeState extends State<DesignHome> {
     return Scaffold(
       appBar: AppBar(
         title: Text(const ['البصمة', 'المشاريع', 'تقاريري'][_index]),
-        actions: const [LogoutAction()],
+        actions: [
+          IconButton(
+            tooltip: 'الإشعارات',
+            icon: const Icon(Icons.notifications_outlined),
+            onPressed: () => Navigator.push(
+              context,
+              MaterialPageRoute(
+                builder: (_) => Scaffold(
+                  appBar: AppBar(title: const Text('الإشعارات')),
+                  body: NotificationsView(
+                      stream: FirestoreService()
+                          .notificationsForUser(widget.user.uid)),
+                ),
+              ),
+            ),
+          ),
+          const LogoutAction(),
+        ],
       ),
       body: IndexedStack(index: _index, children: tabs),
       bottomNavigationBar: NavigationBar(

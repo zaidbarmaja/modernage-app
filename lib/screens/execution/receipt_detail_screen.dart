@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
@@ -47,7 +47,7 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
               child: Column(
                 children: [
                   const Text('المبلغ المدفوع',
-                      style: TextStyle(color: Color(0xFFE6EAF0))),
+                      style: TextStyle(color: Color(0xFFECEFE1))),
                   const SizedBox(height: 6),
                   Text(Fmt.money(r.amount),
                       style: const TextStyle(
@@ -67,6 +67,8 @@ class _ReceiptDetailScreenState extends State<ReceiptDetailScreen> {
                   InfoRow(
                       label: 'صاحب المشروع',
                       value: r.ownerName.isEmpty ? '—' : r.ownerName),
+                  if (r.recipient.isNotEmpty)
+                    InfoRow(label: 'المستلِم', value: r.recipient),
                   InfoRow(
                       label: 'الموقع',
                       value: r.siteName.isEmpty ? '—' : r.siteName),

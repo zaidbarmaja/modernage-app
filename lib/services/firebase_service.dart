@@ -26,6 +26,9 @@ class Db {
       _fs.collection('holidays');
   static CollectionReference<Map<String, dynamic>> get customers =>
       _fs.collection('customers');
+  // حركات حسابات الزبائن (مشتركة مع تطبيق الويب modage) — لحساب الأرصدة.
+  static CollectionReference<Map<String, dynamic>> get customerTransactions =>
+      _fs.collection('customerTransactions');
   static CollectionReference<Map<String, dynamic>> get consultations =>
       _fs.collection('consultations');
 
@@ -192,6 +195,39 @@ class Db {
             .update({'receivedAmount': FieldValue.increment(delta)});
       } catch (_) {}
     }
+  }
+
+  /// يضيف وصلاً إلكترونياً كحركة في حسابات الزبائن المشتركة (مع تطبيق الويب)،
+  /// مُعلّماً `source: 'electronic'` ليظهر بلون مميّز ضمن «الدفع الإلكتروني».
+  /// expense=false → وصل قبض (receipt)، expense=true → وصل صرف (expense).
+  static Future<void> addElectronicPayment({
+    required String customerName,
+    required num amount,
+    required bool expense,
+    required String description,
+    required DateTime date,
+    required String byName,
+    String imageUrl = '',
+    String receiptId = '', // ربط بالوصل الأصلي لحذفه متسلسلاً
+  }) async {
+    final note = description.trim();
+    final kindLabel = expense ? 'وصل صرف إلكتروني' : 'وصل قبض إلكتروني';
+    await customerTransactions.add({
+      'receiptId': receiptId,
+      // تطبيع المسافات لمطابقة ثابتة باسم الزبون (كما في صفحة الحسابات وكشف الزبون).
+      'customerName': customerName.trim().replaceAll(RegExp(r'\s+'), ' '),
+      'receipt': expense ? null : amount,
+      'expense': expense ? amount : null,
+      'description': note.isEmpty ? kindLabel : '$kindLabel — $note',
+      'datetime': Timestamp.fromDate(date),
+      'isManualTotal': false,
+      'source': 'electronic', // علامة الوصل التلقائي
+      'kind': expense ? 'expense' : 'receipt',
+      'imageUrl': imageUrl,
+      'deleted': false,
+      'createdAt': FieldValue.serverTimestamp(),
+      'createdBy': byName,
+    });
   }
 
   /// حذف وصل (مع خصم مبلغه من «المستلَم» إن أمكن).

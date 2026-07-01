@@ -1,7 +1,9 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../services/auth_service.dart';
+import '../../services/firebase_service.dart';
 import '../../widgets/ui.dart';
 
 /// نموذج إضافة زبون من لوحة الإدارة: الاسم + رقم الهاتف + رمز الوصول.
@@ -85,14 +87,56 @@ class _AddCustomerFormState extends State<AddCustomerForm> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                TextFormField(
-                  controller: _name,
-                  decoration: const InputDecoration(
-                    labelText: 'اسم الزبون',
-                    prefixIcon: Icon(Icons.person_outline),
-                  ),
-                  validator: (v) =>
-                      (v == null || v.trim().isEmpty) ? 'أدخل اسم الزبون' : null,
+                // اختيار الزبون من قاعدة البيانات (حسابات الزبائن) بدل كتابته
+                // يدوياً — يُربط الحساب باسم زبون موجود فيرى كل حساباته وأرصدته
+                // عند تسجيل الدخول. (إن كانت القائمة فارغة يُسمح بالإدخال اليدوي.)
+                StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+                  stream: Db.customers.snapshots(),
+                  builder: (context, snap) {
+                    final names = (snap.data?.docs ?? [])
+                        .map((d) => '${d.data()['name'] ?? ''}'.trim())
+                        .where((n) => n.isNotEmpty)
+                        .toSet()
+                        .toList()
+                      ..sort();
+                    if (names.isEmpty) {
+                      return TextFormField(
+                        controller: _name,
+                        decoration: const InputDecoration(
+                          labelText: 'اسم الزبون',
+                          helperText:
+                              'لا يوجد زبائن في الحسابات بعد — اكتب الاسم يدوياً',
+                          prefixIcon: Icon(Icons.person_outline),
+                        ),
+                        validator: (v) => (v == null || v.trim().isEmpty)
+                            ? 'أدخل اسم الزبون'
+                            : null,
+                      );
+                    }
+                    final value =
+                        names.contains(_name.text) ? _name.text : null;
+                    return DropdownButtonFormField<String>(
+                      initialValue: value,
+                      isExpanded: true,
+                      dropdownColor: AppColors.surfaceAlt,
+                      decoration: const InputDecoration(
+                        labelText: 'اختر الزبون من الحسابات',
+                        helperText:
+                            'يُربط الحساب ببيانات الزبون فيرى كل حساباته عند الدخول',
+                        prefixIcon: Icon(Icons.link),
+                      ),
+                      items: names
+                          .map((n) => DropdownMenuItem<String>(
+                              value: n,
+                              child:
+                                  Text(n, overflow: TextOverflow.ellipsis)))
+                          .toList(),
+                      onChanged: (v) => setState(() => _name.text = v ?? ''),
+                      validator: (v) => (v == null || v.isEmpty)
+                          ? 'اختر الزبون من القائمة'
+                          : null,
+                    );
+                  },
                 ),
                 const SizedBox(height: 14),
                 TextFormField(

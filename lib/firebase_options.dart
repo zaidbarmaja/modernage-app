@@ -2,15 +2,15 @@ import 'package:firebase_core/firebase_core.dart';
 import 'package:flutter/foundation.dart'
     show defaultTargetPlatform, kIsWeb, TargetPlatform;
 
-/// إعدادات Firebase — مشروع المستخدم (modren-48a9c).
+/// إعدادات Firebase — مشروع العميل المشترك (mohmeed-kadim).
 ///
-/// قيم تطبيق الويب من كونسول Firebase. لأندرويد لاحقاً يُضاف تطبيق أندرويد
-/// (google-services.json) بمعرّف appId خاص به.
+/// هذه نفس قاعدة البيانات التي يستخدمها تطبيق الويب في مجلد `modage`
+/// (راجع modage/js/firebase-config.js)، حتى تشترك الواجهتان في نفس Firestore.
 ///
 /// ملاحظة: للحصول على ملفات النظام الأصلية لكل منصّة (google-services.json
-/// لأندرويد و GoogleService-Info.plist لـ iOS)، يُفضّل تشغيل الأمر:
-///   flutterfire configure
-/// لكن القيم أدناه كافية لتشغيل Firestore و Storage على معظم المنصّات.
+/// لأندرويد و GoogleService-Info.plist لـ iOS) من الكونسول، يُفضّل تشغيل:
+///   flutterfire configure --project=mohmeed-kadim
+/// لكن القيم أدناه كافية لتشغيل Auth و Firestore و Storage على المنصّات.
 class DefaultFirebaseOptions {
   static FirebaseOptions get currentPlatform {
     if (kIsWeb) return web;
@@ -26,13 +26,12 @@ class DefaultFirebaseOptions {
     }
   }
 
-  static const String _apiKey = 'AIzaSyDZcliV1QFiqhCjQC4wnrR1bwsXg32kuAc';
-  static const String _projectId = 'modren-48a9c';
-  static const String _authDomain = 'modren-48a9c.firebaseapp.com';
-  static const String _storageBucket = 'modren-48a9c.firebasestorage.app';
-  static const String _messagingSenderId = '366025976353';
-  static const String _appId = '1:366025976353:web:9634894369deec5b625160';
-  static const String _measurementId = 'G-TGSVMLRMZQ';
+  static const String _apiKey = 'AIzaSyBZYqZneGS4mUeIENHfWb9Kz6OWl2p3zsc';
+  static const String _projectId = 'mohmeed-kadim';
+  static const String _authDomain = 'mohmeed-kadim.firebaseapp.com';
+  static const String _storageBucket = 'mohmeed-kadim.firebasestorage.app';
+  static const String _messagingSenderId = '675551759018';
+  static const String _appId = '1:675551759018:web:53d8cdd85d1874e48c9ed3';
 
   static const FirebaseOptions web = FirebaseOptions(
     apiKey: _apiKey,
@@ -41,12 +40,11 @@ class DefaultFirebaseOptions {
     projectId: _projectId,
     authDomain: _authDomain,
     storageBucket: _storageBucket,
-    measurementId: _measurementId,
   );
 
   static const FirebaseOptions android = FirebaseOptions(
     apiKey: _apiKey,
-    appId: _appId,
+    appId: '1:675551759018:android:53d8cdd85d1874e48c9ed3',
     messagingSenderId: _messagingSenderId,
     projectId: _projectId,
     storageBucket: _storageBucket,
@@ -54,10 +52,10 @@ class DefaultFirebaseOptions {
 
   static const FirebaseOptions ios = FirebaseOptions(
     apiKey: _apiKey,
-    appId: _appId,
+    appId: '1:675551759018:ios:53d8cdd85d1874e48c9ed3',
     messagingSenderId: _messagingSenderId,
     projectId: _projectId,
     storageBucket: _storageBucket,
-    iosBundleId: 'com.asralhadatha.app',
+    iosBundleId: 'online.modernage',
   );
 }

@@ -132,6 +132,9 @@ class FsCollections {
   static const receipts = 'receipts'; // الوصولات الإلكترونية (المدفوعات)
   static const notifications = 'notifications';
   static const settings = 'settings'; // إعدادات الشركة (مستند company)
+  // التنبيهات اليومية المجدولة التي يتحكّم بها المدير من الداشبورد؛ يقرأها
+  // التطبيق ويجدول إشعارات محلية للموظفين (تذكير بالدخول/الخروج… إلخ).
+  static const scheduledReminders = 'scheduled_reminders';
   // بيانات اعتماد كلمة المرور (تجزئة + ملح) — منفصلة عن ملف المستخدم كي لا
   // يقرأها الطاقم؛ لا تُحمَّل في نموذج AppUser إطلاقاً.
   static const credentials = 'credentials';

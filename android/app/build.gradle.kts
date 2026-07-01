@@ -1,3 +1,6 @@
+import java.util.Properties
+import java.io.FileInputStream
+
 plugins {
     id("com.android.application")
     id("kotlin-android")
@@ -7,13 +10,22 @@ plugins {
     id("com.google.gms.google-services")
 }
 
+// تحميل بيانات توقيع الإصدار من android/key.properties (سرّي ومستبعَد من Git).
+// إن لم يوجد الملف (مثل بيئات التطوير) يعود التوقيع إلى مفاتيح debug تلقائيًا.
+val keystoreProperties = Properties()
+val keystorePropertiesFile = rootProject.file("key.properties")
+val hasReleaseKeystore = keystorePropertiesFile.exists()
+if (hasReleaseKeystore) {
+    keystoreProperties.load(FileInputStream(keystorePropertiesFile))
+}
+
 android {
-    namespace = "com.example.mohameed_app"
+    namespace = "modernage.online"
     compileSdk = flutter.compileSdkVersion
     ndkVersion = flutter.ndkVersion
 
     compileOptions {
-        // مطلوب لـ flutter_local_notifications (إشعارات الدوام المجدولة).
+        // مطلوب لمكتبة flutter_local_notifications (واجهات Java 8 للتاريخ/الوقت).
         isCoreLibraryDesugaringEnabled = true
         sourceCompatibility = JavaVersion.VERSION_17
         targetCompatibility = JavaVersion.VERSION_17
@@ -36,11 +48,27 @@ android {
         versionName = flutter.versionName
     }
 
+    signingConfigs {
+        // تهيئة توقيع الإصدار من key.properties فقط عند توفّره.
+        if (hasReleaseKeystore) {
+            create("release") {
+                keyAlias = keystoreProperties["keyAlias"] as String
+                keyPassword = keystoreProperties["keyPassword"] as String
+                storeFile = file(keystoreProperties["storeFile"] as String)
+                storePassword = keystoreProperties["storePassword"] as String
+            }
+        }
+    }
+
     buildTypes {
         release {
-            // TODO: Add your own signing config for the release build.
-            // Signing with the debug keys for now, so `flutter run --release` works.
-            signingConfig = signingConfigs.getByName("debug")
+            // التوقيع بمفتاح الإصدار الحقيقي عند توفّره، وإلا مفاتيح debug للتطوير
+            // المحلي (Google Play يرفض الرفع بمفاتيح debug).
+            signingConfig = if (hasReleaseKeystore) {
+                signingConfigs.getByName("release")
+            } else {
+                signingConfigs.getByName("debug")
+            }
         }
     }
 }

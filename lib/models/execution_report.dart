@@ -33,6 +33,13 @@ class ExecutionReport {
     this.createdAt,
   });
 
+  static DateTime? _toDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
   factory ExecutionReport.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
     return ExecutionReport(
@@ -42,7 +49,7 @@ class ExecutionReport {
       ownerName: (m['ownerName'] ?? '') as String,
       executorUid: (m['executorUid'] ?? '') as String,
       executorName: (m['executorName'] ?? '') as String,
-      date: (m['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      date: _toDate(m['date']) ?? DateTime.now(),
       documentsNotes: (m['documentsNotes'] ?? '') as String,
       photoUrls: ((m['photoUrls'] as List?) ?? const [])
           .map((e) => e.toString())
@@ -50,7 +57,7 @@ class ExecutionReport {
       plannedNextDays: (m['plannedNextDays'] ?? '') as String,
       durationDays: (m['durationDays'] as num?)?.toInt(),
       customerUid: m['customerUid'] as String?,
-      createdAt: (m['createdAt'] as Timestamp?)?.toDate(),
+      createdAt: _toDate(m['createdAt']),
     );
   }
 

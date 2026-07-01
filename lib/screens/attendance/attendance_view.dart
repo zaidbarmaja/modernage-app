@@ -7,27 +7,44 @@ import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/attendance.dart';
 import '../../models/company_settings.dart';
+import '../../models/work_site.dart';
 import '../../services/biometric_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/location_service.dart';
-import '../../services/reminder_service.dart';
 import '../../widgets/ui.dart';
 
-/// واجهة البصمة: تسجيل دخول/خروج بالموقع + ملخّص الساعات والسجل.
+/// نطاق حضور معتمد (geofence): إحداثيات + نصف قطر (متر) + اسم للعرض.
+/// موظف التصميم: نطاق واحد = مقر الشركة. موظف التنفيذ: نطاقات = مواقع مشاريعه.
+class AttendanceFence {
+  final double lat;
+  final double lng;
+  final int radius;
+  final String name;
+  const AttendanceFence(this.lat, this.lng, this.radius, this.name);
+}
+
+/// واجهة البصمة: تسجيل دخول/خروج **يدوي** بالموقع + ملخّص الساعات والسجل.
 /// تُستخدم تفاعلياً للموظف، أو للعرض فقط في لوحة المحاسبة.
+///
+/// الموقع يُطلب **لحظة الضغط على زر البصمة فقط** («أثناء الاستخدام») — لا يوجد
+/// أي تتبّع في الخلفية.
 class AttendanceView extends StatefulWidget {
   final AppUser user;
   final bool interactive; // true = يمكن تسجيل بصمة، false = عرض فقط
 
-  /// إعدادات الشركة (موقع البصمة المعتمد + وقت الدوام الموحّد). تُفرض البصمة من
-  /// داخل نطاق موقع الشركة إن حُدِّد، ويُحسب الدوام من أوقاتها.
+  /// إعدادات الشركة (وقت الدوام الموحّد + موقع الشركة). يُحسب الدوام من أوقاتها.
   final CompanySettings company;
+
+  /// النطاقات المسموح تسجيل الحضور من داخلها. فارغة = لا تحقّق من النطاق
+  /// (يُسجَّل الموقع فقط دون منع).
+  final List<AttendanceFence> fences;
 
   const AttendanceView({
     super.key,
     required this.user,
     this.interactive = true,
     this.company = const CompanySettings(),
+    this.fences = const [],
   });
 
   @override
@@ -36,102 +53,14 @@ class AttendanceView extends StatefulWidget {
 
 class _AttendanceViewState extends State<AttendanceView> {
   final _fs = FirestoreService();
-  bool _busy = false;
 
   /// الشهر المختار لفلترة الملخّص والسجل (null = كل الأشهر). الافتراضي: هذا الشهر.
   DateTime? _month = DateTime(DateTime.now().year, DateTime.now().month);
 
+  /// جارٍ تسجيل بصمة الآن (يمنع الضغط المزدوج).
+  bool _busy = false;
+
   bool get _isFriday => DateTime.now().weekday == weekendDay;
-
-  /// تحقّق ببصمة الإصبع قبل التسجيل. يُتجاوز على الأجهزة/المتصفّحات بلا مستشعر
-  /// (مثل الويب)، ويُفرض على الهاتف الذي يدعم البصمة.
-  Future<bool> _verifyBiometric() async {
-    final available = await BiometricService.isAvailable();
-    if (!available) return true;
-    final res = await BiometricService.authenticate('أكّد بصمتك لتسجيل الحضور');
-    if (res == BioResult.success || res == BioResult.unavailable) return true;
-    if (mounted) {
-      showSnack(
-        context,
-        res == BioResult.notEnrolled
-            ? 'لا توجد بصمة مسجّلة على هذا الجهاز.'
-            : 'تعذّر التحقق بالبصمة.',
-        error: true,
-      );
-    }
-    return false;
-  }
-
-  /// سماحية لخطأ دقّة GPS (متر) تُضاف للنطاق لتفادي الرفض الكاذب عند الحافة.
-  static const int _gpsToleranceM = 25;
-
-  /// يتحقّق أن الإحداثيات الحالية داخل نطاق موقع الشركة المعتمد.
-  /// يُستخدم لتسجيل الدخول فقط (لا يُقيَّد الخروج حتى لا يُحبس من غادر الموقع).
-  /// يعيد null إن كان ضمن النطاق أو لم يُحدَّد موقع الشركة، وإلا رسالة رفض.
-  String? _geofenceReject(double lat, double lng) {
-    final c = widget.company;
-    if (!c.hasLocation) return null; // لم يُحدَّد موقع الشركة بعد → لا فرض
-    final d = LocationService.distanceMeters(lat, lng, c.lat!, c.lng!);
-    if (d <= c.radius + _gpsToleranceM) return null; // داخل النطاق المسموح
-    return 'أنت خارج نطاق موقع الشركة (تبعد ${d.round()} م، والمسموح ${c.radius} م). '
-        'اقترب من موقع الشركة ثم سجّل البصمة.';
-  }
-
-  Future<void> _punchIn() async {
-    setState(() => _busy = true);
-    try {
-      if (!await _verifyBiometric()) return;
-      final loc = await LocationService.getCurrentLocation();
-      final reject = _geofenceReject(loc.lat, loc.lng);
-      if (reject != null) {
-        if (mounted) showSnack(context, reject, error: true);
-        return;
-      }
-      final now = DateTime.now();
-      await _fs.checkIn(AttendanceRecord(
-        id: '',
-        uid: widget.user.uid,
-        userName: widget.user.name,
-        department: widget.user.department,
-        workStartMin: widget.company.workStartMin,
-        workEndMin: widget.company.workEndMin,
-        checkIn: now,
-        checkInLat: loc.lat,
-        checkInLng: loc.lng,
-      ));
-      if (mounted) {
-        showSnack(context, 'تم تسجيل بصمة الدخول ✓ (${Fmt.time(now)})');
-      }
-    } on LocationException catch (e) {
-      if (mounted) showSnack(context, e.message, error: true);
-    } catch (_) {
-      if (mounted) showSnack(context, 'تعذّر تسجيل الدخول.', error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  Future<void> _punchOut() async {
-    setState(() => _busy = true);
-    try {
-      if (!await _verifyBiometric()) return;
-      // لا يُقيَّد الخروج بالنطاق: الموظف قد يكون غادر الموقع، ومنعُه يحبس
-      // سجلّ اليوم مفتوحاً. نسجّل موقع الخروج فقط للمراجعة.
-      final loc = await LocationService.getCurrentLocation();
-      final now = DateTime.now();
-      await _fs.checkOut(widget.user.uid,
-          checkOutTime: now, lat: loc.lat, lng: loc.lng);
-      if (mounted) {
-        showSnack(context, 'تم تسجيل بصمة الخروج ✓ (${Fmt.time(now)})');
-      }
-    } on LocationException catch (e) {
-      if (mounted) showSnack(context, e.message, error: true);
-    } catch (_) {
-      if (mounted) showSnack(context, 'تعذّر تسجيل الخروج.', error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
 
   @override
   Widget build(BuildContext context) {
@@ -142,10 +71,13 @@ class _AttendanceViewState extends State<AttendanceView> {
           return const LoadingView();
         }
         final records = snapshot.data ?? [];
-        final todayKey = AttendanceRecord.dayKeyOf(DateTime.now());
+        // سجل اليوم (إن وُجد) — لتحديد حالة زر البصمة.
+        final now = DateTime.now();
         AttendanceRecord? today;
         for (final r in records) {
-          if (r.dayKey == todayKey) {
+          if (r.checkIn.year == now.year &&
+              r.checkIn.month == now.month &&
+              r.checkIn.day == now.day) {
             today = r;
             break;
           }
@@ -167,7 +99,7 @@ class _AttendanceViewState extends State<AttendanceView> {
             _scheduleCard(),
             const SizedBox(height: 12),
             if (widget.interactive) ...[
-              _punchCard(today),
+              _manualCard(today),
               const SizedBox(height: 12),
             ],
             _monthFilterCard(months),
@@ -278,105 +210,181 @@ class _AttendanceViewState extends State<AttendanceView> {
     );
   }
 
-  Widget _punchCard(AttendanceRecord? today) {
-    final canCheckIn = today == null && !_isFriday;
-    final canCheckOut = today != null && today.isOpen;
+  /// بطاقة البصمة اليدوية: زر «تسجيل الحضور»/«تسجيل الانصراف» يطلب الموقع لحظة
+  /// الضغط فقط. عطلة الجمعة تُعطّل الزر.
+  Widget _manualCard(AttendanceRecord? today) {
+    Widget statusRow(IconData icon, Color color, String text) => Row(
+          crossAxisAlignment: CrossAxisAlignment.start,
+          children: [
+            Icon(icon, color: color, size: 22),
+            const SizedBox(width: 10),
+            Expanded(
+              child: Text(text,
+                  style: const TextStyle(color: AppColors.cream, height: 1.6)),
+            ),
+          ],
+        );
+
+    final children = <Widget>[];
+
+    if (_isFriday) {
+      children.add(statusRow(Icons.weekend, AppColors.warning,
+          'اليوم عطلة (الجمعة) — لا حاجة لتسجيل الحضور.'));
+    } else if (today != null && !today.isOpen) {
+      children.add(statusRow(
+          Icons.verified,
+          AppColors.success,
+          'اكتمل دوام اليوم ✓\nدخول ${Fmt.time(today.checkIn)}  •  '
+          'خروج ${Fmt.time(today.checkOut)}'));
+    } else if (today != null && today.isOpen) {
+      children.add(statusRow(Icons.login, AppColors.oliveBright,
+          'سجّلت دخولك الساعة ${Fmt.time(today.checkIn)}. اضغط للانصراف عند مغادرتك.'));
+      children.add(const SizedBox(height: 12));
+      children.add(SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: _busy ? null : _checkOut,
+          style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
+          icon: _busy
+              ? const _Spinner()
+              : const Icon(Icons.logout),
+          label: const Text('تسجيل الانصراف',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        ),
+      ));
+    } else {
+      children.add(statusRow(
+          Icons.my_location,
+          AppColors.oliveBright,
+          widget.fences.isEmpty
+              ? 'اضغط لتسجيل حضورك. سيُطلب إذن الموقع لحظة التسجيل فقط.'
+              : 'اضغط لتسجيل حضورك من داخل نطاق موقع العمل. سيُطلب إذن الموقع '
+                  'لحظة التسجيل فقط.'));
+      children.add(const SizedBox(height: 12));
+      children.add(SizedBox(
+        width: double.infinity,
+        height: 50,
+        child: ElevatedButton.icon(
+          onPressed: _busy ? null : _checkIn,
+          icon: _busy ? const _Spinner() : const Icon(Icons.fingerprint),
+          label: const Text('تسجيل الحضور',
+              style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
+        ),
+      ));
+    }
 
     return SectionCard(
-      title: 'بصمة اليوم',
+      title: 'تسجيل الحضور',
       icon: Icons.fingerprint,
       child: Column(
         crossAxisAlignment: CrossAxisAlignment.stretch,
-        children: [
-          if (widget.company.hasLocation) ...[
-            Container(
-              padding: const EdgeInsets.all(10),
-              decoration: BoxDecoration(
-                color: AppColors.oliveBright.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Row(
-                children: [
-                  Icon(Icons.location_on, color: AppColors.oliveBright, size: 20),
-                  SizedBox(width: 8),
-                  Expanded(
-                    child: Text(
-                        'تسجيل الدخول مسموح فقط من داخل نطاق موقع الشركة المعتمد.',
-                        style: TextStyle(color: AppColors.cream, fontSize: 13)),
-                  ),
-                ],
-              ),
-            ),
-            const SizedBox(height: 10),
-          ],
-          if (today != null) ...[
-            InfoRow(
-                label: 'الدخول',
-                value: Fmt.time(today.checkIn),
-                icon: Icons.login,
-                valueColor: AppColors.success),
-            InfoRow(
-                label: 'الخروج',
-                value: today.checkOut == null
-                    ? 'لم يُسجّل بعد'
-                    : Fmt.time(today.checkOut),
-                icon: Icons.logout,
-                valueColor:
-                    today.checkOut == null ? AppColors.warning : AppColors.cream),
-            if (today.checkOut != null) ...[
-              InfoRow(
-                  label: 'مدة العمل',
-                  value: Fmt.duration(today.workedMinutes)),
-              InfoRow(
-                  label: 'إضافي',
-                  value: Fmt.duration(today.overtimeMinutes),
-                  valueColor: AppColors.success),
-            ],
-            const SizedBox(height: 8),
-          ],
-          if (canCheckIn)
-            ElevatedButton.icon(
-              onPressed: _busy ? null : _punchIn,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          color: AppColors.cream, strokeWidth: 2.2))
-                  : const Icon(Icons.login),
-              label: const Text('تسجيل دخول (بصمة بالموقع)'),
-            )
-          else if (canCheckOut)
-            ElevatedButton.icon(
-              style: ElevatedButton.styleFrom(
-                  backgroundColor: AppColors.oliveDark),
-              onPressed: _busy ? null : _punchOut,
-              icon: _busy
-                  ? const SizedBox(
-                      width: 18,
-                      height: 18,
-                      child: CircularProgressIndicator(
-                          color: AppColors.cream, strokeWidth: 2.2))
-                  : const Icon(Icons.logout),
-              label: const Text('تسجيل خروج (بصمة بالموقع)'),
-            )
-          else if (today != null && today.checkOut != null)
-            Container(
-              padding: const EdgeInsets.all(12),
-              decoration: BoxDecoration(
-                color: AppColors.success.withValues(alpha: 0.12),
-                borderRadius: BorderRadius.circular(10),
-              ),
-              child: const Center(
-                child: Text('اكتمل دوام اليوم ✓',
-                    style: TextStyle(
-                        color: AppColors.success,
-                        fontWeight: FontWeight.bold)),
-              ),
-            ),
-        ],
+        children: children,
       ),
     );
+  }
+
+  /// يجلب الموقع الحالي (يطلب الإذن لحظتها)، ويتحقّق من النطاق إن وُجد، ثم يسجّل الدخول.
+  Future<void> _checkIn() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      // بصمة الإصبع للتحقّق من هوية الموظف قبل التسجيل.
+      final bio = await BiometricService.verify('أكّد بصمة إصبعك لتسجيل الحضور');
+      if (bio == BioResult.failed) {
+        if (mounted) {
+          showSnack(context, 'لم يتم التحقّق من بصمتك. حاول مجددًا.',
+              error: true);
+        }
+        return;
+      }
+
+      final pos = await LocationService.currentPosition();
+
+      // تحقّق النطاق (إن حُدِّد): يجب أن يكون داخل أحد نطاقات موقع العمل.
+      final fences = widget.fences;
+      if (fences.isNotEmpty) {
+        double nearestEdge = double.infinity;
+        AttendanceFence? nearest;
+        for (final f in fences) {
+          final d = LocationService.distanceMeters(
+              pos.latitude, pos.longitude, f.lat, f.lng);
+          final edge = d - f.radius; // سالب = بالداخل
+          if (edge < nearestEdge) {
+            nearestEdge = edge;
+            nearest = f;
+          }
+        }
+        final tol = (pos.accuracy.isFinite ? pos.accuracy : 0).clamp(0, 50);
+        if (nearestEdge > tol) {
+          if (mounted) {
+            showSnack(
+                context,
+                'أنت خارج نطاق موقع العمل '
+                '(تبعد ${nearestEdge.round()} م عن ${nearest?.name ?? 'الموقع'}). '
+                'اقترب من الموقع وحاول مجددًا.',
+                error: true);
+          }
+          return;
+        }
+      }
+
+      final u = widget.user;
+      final c = widget.company;
+      await _fs.checkIn(AttendanceRecord(
+        id: '',
+        uid: u.uid,
+        userName: u.name,
+        department: u.department,
+        workStartMin: u.workStartMin ?? c.workStartMin,
+        workEndMin: u.workEndMin ?? c.workEndMin,
+        checkIn: DateTime.now(),
+        checkInLat: pos.latitude,
+        checkInLng: pos.longitude,
+      ));
+      if (mounted) showSnack(context, 'تم تسجيل دخولك ✓');
+    } on LocationException catch (e) {
+      if (mounted) showSnack(context, e.message, error: true);
+    } catch (_) {
+      if (mounted) {
+        showSnack(context, 'تعذّر تسجيل الحضور. حاول مجددًا.', error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
+  }
+
+  /// يسجّل الانصراف مع موقعه (لا يُمنع خارج النطاق — قد يغادر الموظف الموقع).
+  Future<void> _checkOut() async {
+    if (_busy) return;
+    setState(() => _busy = true);
+    try {
+      // بصمة الإصبع للتحقّق من هوية الموظف قبل تسجيل الانصراف.
+      final bio =
+          await BiometricService.verify('أكّد بصمة إصبعك لتسجيل الانصراف');
+      if (bio == BioResult.failed) {
+        if (mounted) {
+          showSnack(context, 'لم يتم التحقّق من بصمتك. حاول مجددًا.',
+              error: true);
+        }
+        return;
+      }
+
+      final pos = await LocationService.currentPosition();
+      await _fs.checkOut(widget.user.uid,
+          checkOutTime: DateTime.now(),
+          lat: pos.latitude,
+          lng: pos.longitude);
+      if (mounted) showSnack(context, 'تم تسجيل انصرافك ✓');
+    } on LocationException catch (e) {
+      if (mounted) showSnack(context, e.message, error: true);
+    } catch (_) {
+      if (mounted) {
+        showSnack(context, 'تعذّر تسجيل الانصراف. حاول مجددًا.', error: true);
+      }
+    } finally {
+      if (mounted) setState(() => _busy = false);
+    }
   }
 
   Widget _summaryCard(AttendanceSummary s) {
@@ -432,41 +440,64 @@ class _AttendanceViewState extends State<AttendanceView> {
   }
 }
 
-/// تبويب البصمة للموظف: يجلب إعدادات الشركة (موقع البصمة + وقت الدوام) ويمرّرها
-/// لشاشة البصمة، ويُجدول تذكيرات الدخول/الخروج المحلية على وقت دوام الشركة.
-class AttendanceTab extends StatefulWidget {
+/// مؤشّر دوران صغير داخل زر البصمة أثناء تحديد الموقع.
+class _Spinner extends StatelessWidget {
+  const _Spinner();
+  @override
+  Widget build(BuildContext context) => const SizedBox(
+        height: 22,
+        width: 22,
+        child: CircularProgressIndicator(
+            color: AppColors.cream, strokeWidth: 2.4),
+      );
+}
+
+/// تبويب البصمة للموظف: يجلب إعدادات الشركة (وقت الدوام) ونطاقات الحضور، ويمرّرها
+/// لشاشة البصمة. التسجيل **يدوي** (زر يطلب الموقع لحظة الضغط).
+///
+/// • موظف **التنفيذ**: النطاقات = مواقع مشاريعه المُسندة.
+/// • موظف **التصميم/غيره**: النطاق = مقر الشركة (إن حُدِّد).
+class AttendanceTab extends StatelessWidget {
   final AppUser user;
   const AttendanceTab({super.key, required this.user});
 
   @override
-  State<AttendanceTab> createState() => _AttendanceTabState();
-}
-
-class _AttendanceTabState extends State<AttendanceTab> {
-  final _fs = FirestoreService();
-  String _scheduledSig = ''; // توقيع آخر أوقات جُدوِلت (لتفادي التكرار)
-
-  void _maybeSchedule(CompanySettings c) {
-    final sig = '${c.workStartMin}-${c.workEndMin}';
-    if (sig == _scheduledSig) return;
-    _scheduledSig = sig;
-    ReminderService.instance.scheduleWorkReminders(
-      workStartMin: c.workStartMin,
-      workEndMin: c.workEndMin,
-    );
-  }
-
-  @override
   Widget build(BuildContext context) {
+    final fs = FirestoreService();
     return StreamBuilder<CompanySettings>(
-      stream: _fs.companySettings(),
+      stream: fs.companySettings(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const LoadingView();
         }
         final company = snap.data ?? const CompanySettings();
-        _maybeSchedule(company);
-        return AttendanceView(user: widget.user, company: company);
+
+        // موظف التنفيذ: النطاقات = مواقع مشاريعه (لكل موقع إحداثياته ونطاقه).
+        if (user.role == UserRole.executionEmployee) {
+          return StreamBuilder<List<WorkSite>>(
+            stream: fs.sitesByExecutor(user.uid),
+            builder: (context, s2) {
+              final sites = s2.data ?? const <WorkSite>[];
+              final fences = <AttendanceFence>[
+                for (final st in sites)
+                  if (st.lat != null && st.lng != null)
+                    AttendanceFence(st.lat!, st.lng!, st.radius,
+                        st.siteName.isEmpty ? st.ownerName : st.siteName),
+              ];
+              return AttendanceView(
+                  user: user, company: company, fences: fences);
+            },
+          );
+        }
+
+        // موظف التصميم/غيره: نطاق مقر الشركة.
+        final fences = company.hasLocation
+            ? <AttendanceFence>[
+                AttendanceFence(
+                    company.lat!, company.lng!, company.radius, 'مقر الشركة'),
+              ]
+            : const <AttendanceFence>[];
+        return AttendanceView(user: user, company: company, fences: fences);
       },
     );
   }

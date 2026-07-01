@@ -1,5 +1,3 @@
-import 'dart:typed_data';
-
 import 'package:flutter/material.dart';
 import 'package:flutter/services.dart';
 import 'package:image_picker/image_picker.dart';
@@ -10,15 +8,19 @@ import '../../models/app_notification.dart';
 import '../../models/app_user.dart';
 import '../../models/receipt.dart';
 import '../../models/work_site.dart';
+import '../../services/firebase_service.dart';
 import '../../services/firestore_service.dart';
 import '../../services/storage_service.dart';
+import '../../widgets/account_customer_picker.dart';
 import '../../widgets/ui.dart';
 
-/// نموذج إصدار وصل إلكتروني (T-3.4): المبلغ + الوصف + صورة مرفقة + التاريخ.
+/// نموذج إصدار وصل إلكتروني (T-3.4): المبلغ + المستلِم + الوصف + صورة + التاريخ.
+/// [site] اختياري: عند تمريره يُربط الوصل بالموقع (موظف التنفيذ)، وعند غيابه
+/// يكون وصلاً مستقلاً يُصدره المدير باختيار الزبون من الحسابات فقط.
 class ReceiptForm extends StatefulWidget {
-  final WorkSite site;
-  final AppUser executor;
-  const ReceiptForm({super.key, required this.site, required this.executor});
+  final WorkSite? site;
+  final AppUser executor; // مُصدِر الوصل (موظف التنفيذ أو المدير)
+  const ReceiptForm({super.key, this.site, required this.executor});
 
   @override
   State<ReceiptForm> createState() => _ReceiptFormState();
@@ -32,15 +34,27 @@ class _ReceiptFormState extends State<ReceiptForm> {
 
   final _amount = TextEditingController();
   final _desc = TextEditingController();
+  final _recipient = TextEditingController();
   DateTime _date = DateTime.now();
   XFile? _image;
   Uint8List? _imageBytes; // للمعاينة (يعمل على الويب والموبايل)
   bool _busy = false;
+  bool _isExpense = false; // false = وصل قبض، true = وصل صرف
+  String? _customerName; // الزبون المختار من قاعدة البيانات (إجباري)
+
+  @override
+  void initState() {
+    super.initState();
+    // يُملأ مبدئيًا باسم صاحب الموقع إن كان زبونًا في القائمة، ويبقى الاختيار إجباريًا.
+    final owner = widget.site?.ownerName.trim() ?? '';
+    _customerName = owner.isEmpty ? null : owner;
+  }
 
   @override
   void dispose() {
     _amount.dispose();
     _desc.dispose();
+    _recipient.dispose();
     super.dispose();
   }
 
@@ -72,46 +86,77 @@ class _ReceiptFormState extends State<ReceiptForm> {
 
   Future<void> _save() async {
     if (!_formKey.currentState!.validate()) return;
+    final customer = _customerName?.trim() ?? '';
+    if (customer.isEmpty) {
+      showSnack(context, 'اختر الزبون من القائمة (إجباري).', error: true);
+      return;
+    }
     setState(() => _busy = true);
     var imageUrl = '';
     try {
+      final site = widget.site;
       if (_image != null) {
         imageUrl = await _storage.uploadXFile(_image!,
-            folder: 'receipts/${widget.site.id}');
+            folder: 'receipts/${site?.id ?? 'admin'}');
       }
       final amount = num.parse(_amount.text.trim());
-      await _fs.addReceipt(Receipt(
+      // صاحب المشروع: اسم الموقع إن وُجد، وإلا اسم الزبون المختار (وصل مستقل).
+      final ownerName = (site?.ownerName.trim().isNotEmpty ?? false)
+          ? site!.ownerName
+          : customer;
+      final recipient = _recipient.text.trim();
+
+      // كلا النوعين (قبض/صرف) يُحفظ في وصولات التطبيق ليظهر في صفحة الوصولات
+      // كاملةً، ويُنسخ إلى حسابات الزبائن المشتركة كـ«دفع إلكتروني».
+      final ref = await _fs.addReceipt(Receipt(
         id: '',
-        siteId: widget.site.id,
-        siteName: widget.site.siteName,
-        ownerName: widget.site.ownerName,
-        projectId: widget.site.projectId,
-        customerUid: widget.site.customerUid,
+        siteId: site?.id ?? '',
+        siteName: site?.siteName ?? '',
+        ownerName: ownerName,
+        projectId: site?.projectId,
+        customerUid: site?.customerUid,
         amount: amount,
+        expense: _isExpense,
         description: _desc.text.trim(),
+        recipient: recipient,
         imageUrl: imageUrl,
         createdByUid: widget.executor.uid,
         createdByName: widget.executor.name,
         date: _date,
       ));
-      // إشعار بوصل جديد موجّه للزبون المعني (والإدارة ترى كل الإشعارات) — T-4.5.
-      // لا نُنشئ إشعاراً بلا مستلِم إن لم يكن الموقع مربوطاً بزبون.
-      final customerUid = widget.site.customerUid ?? '';
+      final customerUid = site?.customerUid ?? '';
       if (customerUid.isNotEmpty) {
         await _fs.addNotification(AppNotification(
           id: '',
           type: 'receipt',
-          title: 'وصل جديد: ${Fmt.money(amount)}',
+          title: _isExpense
+              ? 'وصل صرف: ${Fmt.money(amount)}'
+              : 'وصل قبض: ${Fmt.money(amount)}',
           body:
-              '${widget.executor.name} أصدر وصلاً بقيمة ${Fmt.money(amount)} لموقع ${widget.site.ownerName}',
+              '${widget.executor.name} ${_isExpense ? 'سجّل صرفاً' : 'أصدر وصل قبض'} '
+              'بقيمة ${Fmt.money(amount)} لموقع $ownerName',
           fromUid: widget.executor.uid,
           fromName: widget.executor.name,
           toUid: customerUid,
-          relatedId: widget.site.id,
+          relatedId: site?.id,
         ));
       }
+      // مرآة في الحسابات المشتركة (لا نُفشل الوصل إن تعذّر).
+      try {
+        await Db.addElectronicPayment(
+          customerName: customer,
+          amount: amount,
+          expense: _isExpense,
+          description: _desc.text.trim(),
+          date: _date,
+          byName: widget.executor.name,
+          imageUrl: imageUrl,
+          receiptId: ref.id,
+        );
+      } catch (_) {}
       if (mounted) {
-        showSnack(context, 'تم إصدار الوصل ✓');
+        showSnack(context,
+            _isExpense ? 'تم تسجيل وصل الصرف ✓' : 'تم إصدار وصل القبض ✓');
         Navigator.pop(context);
       }
     } catch (_) {
@@ -126,7 +171,8 @@ class _ReceiptFormState extends State<ReceiptForm> {
   @override
   Widget build(BuildContext context) {
     return Scaffold(
-      appBar: AppBar(title: const Text('وصل إلكتروني جديد')),
+      appBar: AppBar(
+          title: Text(_isExpense ? 'وصل صرف جديد' : 'وصل قبض جديد')),
       body: SafeArea(
         child: SingleChildScrollView(
           padding: const EdgeInsets.all(20),
@@ -135,8 +181,33 @@ class _ReceiptFormState extends State<ReceiptForm> {
             child: Column(
               crossAxisAlignment: CrossAxisAlignment.stretch,
               children: [
-                Text('الموقع: ${widget.site.ownerName}',
-                    style: const TextStyle(color: AppColors.creamDim)),
+                SegmentedButton<bool>(
+                  segments: const [
+                    ButtonSegment(
+                        value: false,
+                        label: Text('وصل قبض'),
+                        icon: Icon(Icons.south_west)),
+                    ButtonSegment(
+                        value: true,
+                        label: Text('وصل صرف'),
+                        icon: Icon(Icons.north_east)),
+                  ],
+                  selected: {_isExpense},
+                  showSelectedIcon: false,
+                  onSelectionChanged: (s) => setState(() => _isExpense = s.first),
+                ),
+                const SizedBox(height: 14),
+                if (widget.site != null) ...[
+                  Text('الموقع: ${widget.site!.ownerName}',
+                      style: const TextStyle(color: AppColors.creamDim)),
+                  const SizedBox(height: 14),
+                ],
+                // اختيار الزبون من قاعدة البيانات (إجباري).
+                AccountCustomerPicker(
+                  selectedName: _customerName,
+                  label: 'الزبون (إجباري — من قائمة الحسابات)',
+                  onSelected: (name) => setState(() => _customerName = name),
+                ),
                 const SizedBox(height: 14),
                 TextFormField(
                   controller: _amount,
@@ -146,9 +217,9 @@ class _ReceiptFormState extends State<ReceiptForm> {
                   inputFormatters: [
                     FilteringTextInputFormatter.allow(RegExp(r'[0-9.]')),
                   ],
-                  decoration: const InputDecoration(
-                    labelText: 'المبلغ المدفوع',
-                    prefixIcon: Icon(Icons.payments),
+                  decoration: InputDecoration(
+                    labelText: _isExpense ? 'المبلغ المصروف' : 'المبلغ المقبوض',
+                    prefixIcon: const Icon(Icons.payments),
                     suffixText: 'د.ع',
                   ),
                   validator: (v) {
@@ -173,6 +244,14 @@ class _ReceiptFormState extends State<ReceiptForm> {
                   validator: (v) => (v == null || v.trim().isEmpty)
                       ? 'اكتب وصف الدفعة'
                       : null,
+                ),
+                const SizedBox(height: 14),
+                TextFormField(
+                  controller: _recipient,
+                  decoration: const InputDecoration(
+                    labelText: 'المستلِم (اسم من استلم/سُلِّم له المبلغ)',
+                    prefixIcon: Icon(Icons.person_outline),
+                  ),
                 ),
                 const SizedBox(height: 14),
                 OutlinedButton.icon(
@@ -249,7 +328,9 @@ class _ReceiptFormState extends State<ReceiptForm> {
                           child: CircularProgressIndicator(
                               color: AppColors.cream, strokeWidth: 2.2))
                       : const Icon(Icons.save),
-                  label: Text(_busy ? 'جارٍ الحفظ...' : 'إصدار الوصل'),
+                  label: Text(_busy
+                      ? 'جارٍ الحفظ...'
+                      : (_isExpense ? 'تسجيل وصل الصرف' : 'إصدار وصل القبض')),
                 ),
               ],
             ),

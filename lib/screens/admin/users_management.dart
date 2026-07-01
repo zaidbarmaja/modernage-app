@@ -23,6 +23,7 @@ class UsersManagementTab extends StatefulWidget {
 
 class _UsersManagementTabState extends State<UsersManagementTab> {
   final _fs = FirestoreService();
+  final _auth = AuthService();
   final _search = TextEditingController();
   String _query = '';
   // المهمة #3: تبديل سريع بين عرض الطاقم الداخلي وعرض الزبائن (للأدمن).
@@ -177,6 +178,8 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
                 MaterialPageRoute(
                     builder: (_) => AddEmployeeForm(existing: u)),
               );
+            } else if (v == 'rename') {
+              _changeName(u);
             } else if (v == 'role') {
               _editRole(context, u);
             } else if (v == 'toggle') {
@@ -195,6 +198,11 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
             const PopupMenuItem(
               value: 'edit',
               child: Text('تعديل المعلومات',
+                  style: TextStyle(color: AppColors.cream)),
+            ),
+            const PopupMenuItem(
+              value: 'rename',
+              child: Text('تغيير الاسم',
                   style: TextStyle(color: AppColors.cream)),
             ),
             const PopupMenuItem(
@@ -267,6 +275,9 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
     );
     if (ok == true && mounted) {
       context.read<AuthController>().impersonate(u);
+      // ننتقل مباشرة لصفحة الحساب: نُغلق شاشات الإدارة المكدّسة فتظهر صفحة
+      // المستخدم (CustomerHome للزبون) التي يبنيها الموجّه بعد تبديل الجلسة.
+      Navigator.of(context).popUntil((r) => r.isFirst);
     }
   }
 
@@ -291,7 +302,8 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
             const Text('حذف الحساب', style: TextStyle(color: AppColors.cream)),
         content: Text(
           'حذف حساب «${u.name}» نهائياً؟\n'
-          'لن يستطيع الدخول أو الوصول لأي بيانات. لا يمكن التراجع.',
+          'سيُحذف الحساب وبيانات دخوله من قاعدة البيانات ويتحرّر '
+          'رقم الهاتف/اسم الدخول لإعادة استخدامه. لا يمكن التراجع.',
           style: const TextStyle(color: AppColors.creamDim, height: 1.6),
         ),
         actions: [
@@ -308,8 +320,8 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
     );
     if (ok != true) return;
     try {
-      await _fs.deleteUser(u.uid);
-      if (mounted) showSnack(context, 'تم حذف حساب ${u.name} ✓');
+      await _fs.deleteUserPermanently(u.uid);
+      if (mounted) showSnack(context, 'تم حذف حساب ${u.name} نهائياً ✓');
     } catch (_) {
       if (mounted) showSnack(context, 'تعذّر حذف الحساب.', error: true);
     }
@@ -325,24 +337,24 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
       builder: (ctx) => StatefulBuilder(
         builder: (ctx, setLocal) => AlertDialog(
           backgroundColor: AppColors.surface,
-          title: Text('رمز الدخول: ${u.name.isEmpty ? u.phone : u.name}',
+          title: Text('كلمة مرور: ${u.name.isEmpty ? u.phone : u.name}',
               style: const TextStyle(color: AppColors.cream, fontSize: 18)),
           content: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
               const Text(
-                'أدخل رمز دخول جديداً (4 أرقام) لهذا الحساب — يدخل به مباشرة بعد الحفظ.',
+                'أدخل كلمة المرور الجديدة (4 خانات على الأقل) لهذا الحساب — '
+                'يدخل بها مباشرة بعد الحفظ.',
                 style: TextStyle(color: AppColors.creamDim, height: 1.5),
               ),
               const SizedBox(height: 14),
               TextField(
                 controller: ctrl,
                 obscureText: obscure,
-                keyboardType: TextInputType.number,
                 textDirection: TextDirection.ltr,
                 style: const TextStyle(color: AppColors.cream),
                 decoration: InputDecoration(
-                  labelText: 'الرمز الجديد (4 أرقام)',
+                  labelText: 'كلمة المرور الجديدة',
                   prefixIcon: const Icon(Icons.lock_reset),
                   suffixIcon: IconButton(
                     icon: Icon(
@@ -370,11 +382,11 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
     ctrl.dispose();
     if (newPass == null) return;
     // نتحقّق ونجزّئ نفس القيمة (مقصوصة) كي يطابقها الدخول الذي لا يقصّ.
-    // كل الحسابات: رمز دخول من ٤ أرقام.
+    // تُقبل أي كلمة مرور (أرقام أو حروف) بطول 4 خانات على الأقل.
     final pass = newPass.trim();
-    if (pass.length != 4 || int.tryParse(pass) == null) {
+    if (pass.length < 4) {
       if (mounted) {
-        showSnack(context, 'رمز الدخول 4 أرقام.', error: true);
+        showSnack(context, 'كلمة المرور 4 خانات على الأقل.', error: true);
       }
       return;
     }
@@ -386,6 +398,55 @@ class _UsersManagementTabState extends State<UsersManagementTab> {
       }
     } catch (_) {
       if (mounted) showSnack(context, 'تعذّر تعيين كلمة المرور.', error: true);
+    }
+  }
+
+  /// تغيير اسم أي حساب (موظف أو زبون) — يحدّث الاسم ومفاتيح الدخول كي يبقى
+  /// الدخول بالاسم/الهاتف صحيحاً.
+  Future<void> _changeName(AppUser u) async {
+    final ctrl = TextEditingController(text: u.name);
+    final newName = await showDialog<String>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('تغيير الاسم', style: TextStyle(color: AppColors.cream)),
+        content: TextField(
+          controller: ctrl,
+          autofocus: true,
+          style: const TextStyle(color: AppColors.cream),
+          decoration: const InputDecoration(
+            labelText: 'الاسم الجديد',
+            prefixIcon: Icon(Icons.person_outline),
+          ),
+        ),
+        actions: [
+          TextButton(
+            onPressed: () => Navigator.pop(ctx),
+            child:
+                const Text('إلغاء', style: TextStyle(color: AppColors.creamDim)),
+          ),
+          ElevatedButton(
+            onPressed: () => Navigator.pop(ctx, ctrl.text),
+            child: const Text('حفظ'),
+          ),
+        ],
+      ),
+    );
+    ctrl.dispose();
+    if (newName == null) return;
+    final name = newName.trim();
+    if (name.isEmpty) {
+      if (mounted) showSnack(context, 'أدخل الاسم.', error: true);
+      return;
+    }
+    try {
+      await _fs.updateUser(u.uid, {
+        'name': name,
+        'loginNames': _auth.loginKeys(name, u.phone),
+      });
+      if (mounted) showSnack(context, 'تم تغيير الاسم إلى $name ✓');
+    } catch (_) {
+      if (mounted) showSnack(context, 'تعذّر تغيير الاسم.', error: true);
     }
   }
 

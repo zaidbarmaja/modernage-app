@@ -1,15 +1,16 @@
 <manifest xmlns:android="http://schemas.android.com/apk/res/android">
-    <!-- صلاحيات التطبيق: الإنترنت لقاعدة بيانات Firebase والموقع للبصمة وتسجيل دخول الموقع -->
+    <!-- الإنترنت لقاعدة بيانات Firebase. -->
     <uses-permission android:name="android.permission.INTERNET"/>
+    <!-- الموقع «أثناء الاستخدام» فقط: يُطلب لحظة ضغط الموظف على زر تسجيل الحضور
+         للتحقّق من وجوده في موقع العمل. لا يوجد أي تتبّع في الخلفية. -->
     <uses-permission android:name="android.permission.ACCESS_FINE_LOCATION"/>
     <uses-permission android:name="android.permission.ACCESS_COARSE_LOCATION"/>
-    <!-- بصمة الإصبع لتسجيل الحضور/الانصراف -->
-    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
-    <uses-permission android:name="android.permission.USE_FINGERPRINT"/>
-    <!-- التذكيرات المحلية المجدولة (إشعارات الدوام) + إعادة الجدولة بعد إعادة التشغيل -->
+    <!-- إشعارات تأكيد تسجيل الحضور/الانصراف والتنبيهات المهمّة. -->
     <uses-permission android:name="android.permission.POST_NOTIFICATIONS"/>
+    <!-- البصمة/Face ID للتحقّق من هوية الموظف قبل تسجيل الحضور (local_auth). -->
+    <uses-permission android:name="android.permission.USE_BIOMETRIC"/>
+    <!-- لإعادة جدولة تذكيرات الدوام اليومية بعد إعادة تشغيل الجهاز. -->
     <uses-permission android:name="android.permission.RECEIVE_BOOT_COMPLETED"/>
-    <uses-permission android:name="android.permission.VIBRATE"/>
     <application
         android:label="عصر الحداثة"
         android:name="${applicationName}"
@@ -46,7 +47,13 @@
         <meta-data
             android:name="flutterEmbedding"
             android:value="2" />
-        <!-- مستقبِلات flutter_local_notifications للإشعارات المجدولة وإعادة جدولتها بعد الإقلاع -->
+        <!-- قناة الإشعارات الافتراضية لإشعارات FCM القادمة والتطبيق مغلق
+             (عالية الأهمية مع صوت — نفس قناة التذكيرات). -->
+        <meta-data
+            android:name="com.google.firebase.messaging.default_notification_channel_id"
+            android:value="work_reminders" />
+        <!-- مستقبِلات flutter_local_notifications: لعرض التذكيرات المجدولة وإعادة
+             جدولتها بعد إعادة تشغيل الجهاز (تذكيرات الدوام اليومية). -->
         <receiver
             android:exported="false"
             android:name="com.dexterous.flutterlocalnotifications.ScheduledNotificationReceiver" />

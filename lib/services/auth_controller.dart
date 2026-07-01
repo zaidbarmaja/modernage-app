@@ -4,6 +4,7 @@ import 'package:firebase_auth/firebase_auth.dart';
 import 'package:flutter/foundation.dart';
 import 'package:shared_preferences/shared_preferences.dart';
 
+import '../core/app_login.dart';
 import '../core/constants.dart';
 import '../models/app_user.dart';
 import 'auth_service.dart';
@@ -103,6 +104,21 @@ class AuthController extends ChangeNotifier {
       return;
     }
 
+    // مدير الكود (AppLogin): الدخول بحساب المصادقة الداخلي الثابت → ملف مدير
+    // اصطناعي بصلاحية كاملة دون الحاجة لملف Firestore (يطابق نموذج تطبيق الويب).
+    // يعمل أيضاً عند استعادة الجلسة تلقائياً بعد إعادة فتح التطبيق.
+    if (user.email == AppLogin.authEmail) {
+      appUser = AppUser(
+        uid: user.uid,
+        name: AppLogin.displayName,
+        username: AppLogin.username,
+        email: AppLogin.authEmail,
+        role: UserRole.admin,
+      );
+      _setStatus(AuthStatus.authenticated);
+      return;
+    }
+
     // مستخدم مسجّل: نعرض شاشة البداية ريثما يُحمّل ملفه.
     appUser = null;
     _setStatus(AuthStatus.unknown);
@@ -198,6 +214,15 @@ class AuthController extends ChangeNotifier {
     }
     await _auth.setRememberMe(remember);
     await _auth.signIn(identifier, password);
+  }
+
+  /// دخول المدير (AppLogin): يفتح جلسة Firebase حقيقية بالحساب الداخلي الثابت
+  /// (لصلاحية قاعدة البيانات) باستخدام كلمة المرور التي أدخلها المدير يدويًا —
+  /// لا تُخزَّن في الكود. ثم يُضبط ملف المدير الاصطناعي تلقائياً عبر مستمع
+  /// حالة المصادقة (_onAuthChanged).
+  Future<void> loginCodeAdmin(String password, {bool remember = false}) async {
+    await _auth.setRememberMe(remember);
+    await _auth.signInOrCreateInternal(AppLogin.authEmail, password);
   }
 
   /// يفتح جلسة بحساب حقيقي (uid/دور حقيقيان) دون Firebase Auth — تُستخدم بعد

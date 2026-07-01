@@ -167,8 +167,8 @@ class EmployeesManagementScreen extends StatelessWidget {
         ),
       );
       if (ok == true) {
-        await FirestoreService().deleteUser(u.uid);
-        if (context.mounted) showSnack(context, 'تم الحذف');
+        await FirestoreService().deleteUserPermanently(u.uid);
+        if (context.mounted) showSnack(context, 'تم الحذف نهائياً');
       }
     }
   }

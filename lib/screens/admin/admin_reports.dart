@@ -1,12 +1,16 @@
 import 'package:flutter/material.dart';
 
+import '../../core/constants.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
+import '../../models/app_user.dart';
 import '../../models/daily_report.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/attendance_filter.dart';
 import '../../widgets/ui.dart';
 
-/// لوحة الإدارة: عرض كل التقارير اليومية مع تصفية حسب الموظف/المشروع/التاريخ.
+/// شاشة التقارير (تقارير فقط): قائمة الموظفين واحدًا أسفل الآخر، وبالضغط على
+/// موظف تظهر تقاريره من الأحدث للأقدم، مع فلتر اختيار الموظف ونطاق تاريخ من/إلى.
 class AdminReportsView extends StatefulWidget {
   const AdminReportsView({super.key});
 
@@ -16,203 +20,225 @@ class AdminReportsView extends StatefulWidget {
 
 class _AdminReportsViewState extends State<AdminReportsView> {
   final _fs = FirestoreService();
-  String? _uidFilter; // فلتر الموظف (uid) أو null = الكل
-  String? _projectFilter; // فلتر معرّف المشروع/الموقع (projectId) أو null = الكل
-  DateTime? _dateFilter; // فلتر يوم محدّد أو null = الكل
+  String? _uid; // الموظف المختار (null = عرض قائمة الموظفين)
+  String _selectedName = '';
+  DateTime? _from;
+  DateTime? _to;
+  String? _sel; // فلتر الفترة (مثل البصمة): null / 'm:YYYY-MM' / 'd:YYYY-MM-DD'
 
-  bool _matches(DailyReport r) {
-    if (_uidFilter != null && r.uid != _uidFilter) return false;
-    if (_projectFilter != null && r.projectId != _projectFilter) return false;
-    if (_dateFilter != null &&
-        r.dayKey != DailyReport.dayKeyOf(_dateFilter!)) {
+  /// فلتر الفترة (نفس فلتر البصمة): كل الأيام/هذا الشهر/اليوم/أمس/باقي الأسبوع.
+  Widget _periodFilter() => Padding(
+        padding: const EdgeInsets.only(bottom: 12),
+        child: AttendanceFilter(
+          value: _sel,
+          onChanged: (v) => setState(() => _sel = v),
+        ),
+      );
+
+  bool _passes(DateTime d) => _inRange(d) && AttendanceFilter.matches(d, _sel);
+
+  Future<void> _pickDate(bool from) async {
+    final picked = await showDatePicker(
+      context: context,
+      initialDate: (from ? _from : _to) ?? DateTime.now(),
+      firstDate: DateTime(2020),
+      lastDate: DateTime(2100),
+    );
+    if (picked != null) {
+      setState(() => from ? _from = picked : _to = picked);
+    }
+  }
+
+  bool _inRange(DateTime d) {
+    if (_from != null &&
+        d.isBefore(DateTime(_from!.year, _from!.month, _from!.day))) {
+      return false;
+    }
+    if (_to != null &&
+        d.isAfter(DateTime(_to!.year, _to!.month, _to!.day, 23, 59, 59))) {
       return false;
     }
     return true;
   }
 
-  Future<void> _pickDate() async {
-    final picked = await showDatePicker(
-      context: context,
-      initialDate: _dateFilter ?? DateTime.now(),
-      firstDate: DateTime(2023),
-      lastDate: DateTime(2100),
-    );
-    if (picked != null) setState(() => _dateFilter = picked);
-  }
+  static String _fmtD(DateTime? d) => d == null ? 'الكل' : Fmt.date(d);
+
+  static bool _isStaff(AppUser u) =>
+      u.role != UserRole.customer && u.role != UserRole.admin;
 
   @override
   Widget build(BuildContext context) {
-    return StreamBuilder<List<DailyReport>>(
-      stream: _fs.allDailyReports(),
-      builder: (context, snap) {
-        if (snap.connectionState == ConnectionState.waiting) {
+    return StreamBuilder<List<AppUser>>(
+      stream: _fs.allUsers(),
+      builder: (context, uSnap) {
+        if (uSnap.connectionState == ConnectionState.waiting) {
           return const LoadingView();
         }
-        final all = snap.data ?? const <DailyReport>[];
-
-        // خيارات الموظفين (uid → اسم) والمشاريع (projectId → اسم العرض) من التقارير.
-        final employees = <String, String>{};
-        final projects = <String, String>{};
-        for (final r in all) {
-          if (r.uid.isNotEmpty) employees[r.uid] = r.userName;
-          final pid = r.projectId;
-          if (pid != null && pid.isNotEmpty) {
-            projects[pid] = r.projectName.isNotEmpty ? r.projectName : pid;
-          }
-        }
-        // إن اختفى الفلتر المحدّد من البيانات نُعيد ضبطه.
-        if (_uidFilter != null && !employees.containsKey(_uidFilter)) {
-          _uidFilter = null;
-        }
-        if (_projectFilter != null && !projects.containsKey(_projectFilter)) {
-          _projectFilter = null;
-        }
-
-        final filtered = all.where(_matches).toList();
-
-        return ListView(
-          padding: const EdgeInsets.all(14),
-          children: [
-            const PageHeader(
-              title: 'التقارير اليومية',
-              subtitle: 'عرض وتصفية تقارير كل الموظفين',
-              icon: Icons.event_note,
-            ),
-            const SizedBox(height: 12),
-            _filtersCard(employees, projects),
-            const SizedBox(height: 12),
-            Text(
-              'عدد التقارير: ${filtered.length}'
-              '${filtered.length != all.length ? ' من ${all.length}' : ''}',
-              style: const TextStyle(
-                  color: AppColors.creamDim, fontWeight: FontWeight.w600),
-            ),
-            const SizedBox(height: 8),
-            if (filtered.isEmpty)
-              const EmptyState(
-                  message: 'لا توجد تقارير مطابقة.', icon: Icons.event_busy)
-            else
-              ...filtered.map(_reportTile),
-          ],
+        final employees =
+            (uSnap.data ?? const <AppUser>[]).where(_isStaff).toList();
+        return StreamBuilder<List<DailyReport>>(
+          stream: _fs.allDailyReports(),
+          builder: (context, snap) {
+            if (snap.hasError) {
+              return const EmptyState(
+                  message: 'تعذّر تحميل التقارير.', icon: Icons.error_outline);
+            }
+            final all = snap.data ?? const <DailyReport>[];
+            return _uid == null
+                ? _employeesView(employees, all)
+                : _employeeReports(all);
+          },
         );
       },
     );
   }
 
-  Widget _filtersCard(Map<String, String> employees, Map<String, String> projects) {
-    final projectEntries = projects.entries.toList()
-      ..sort((a, b) => a.value.compareTo(b.value));
-    final empEntries = employees.entries.toList()
-      ..sort((a, b) => a.value.compareTo(b.value));
-    final hasFilter =
-        _uidFilter != null || _projectFilter != null || _dateFilter != null;
-
+  Widget _dateFilter() {
     return SectionCard(
-      title: 'التصفية',
-      icon: Icons.filter_list,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.stretch,
+      title: 'تصفية بالتاريخ',
+      icon: Icons.filter_alt,
+      child: Row(
         children: [
-          DropdownButtonFormField<String?>(
-            initialValue: _uidFilter,
-            isExpanded: true,
-            dropdownColor: AppColors.surfaceAlt,
-            decoration: const InputDecoration(
-              labelText: 'الموظف',
-              prefixIcon: Icon(Icons.person_outline),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _pickDate(true),
+              icon: const Icon(Icons.event, size: 18),
+              label: Text('من: ${_fmtD(_from)}'),
             ),
-            items: [
-              const DropdownMenuItem<String?>(
-                  value: null, child: Text('كل الموظفين')),
-              ...empEntries.map((e) => DropdownMenuItem<String?>(
-                    value: e.key,
-                    child: Text(e.value.isEmpty ? 'موظف' : e.value,
-                        overflow: TextOverflow.ellipsis),
-                  )),
-            ],
-            onChanged: (v) => setState(() => _uidFilter = v),
           ),
-          const SizedBox(height: 12),
-          DropdownButtonFormField<String?>(
-            initialValue: _projectFilter,
-            isExpanded: true,
-            dropdownColor: AppColors.surfaceAlt,
-            decoration: const InputDecoration(
-              labelText: 'المشروع/الموقع',
-              prefixIcon: Icon(Icons.link),
+          const SizedBox(width: 8),
+          Expanded(
+            child: OutlinedButton.icon(
+              onPressed: () => _pickDate(false),
+              icon: const Icon(Icons.event, size: 18),
+              label: Text('إلى: ${_fmtD(_to)}'),
             ),
-            items: [
-              const DropdownMenuItem<String?>(
-                  value: null, child: Text('كل المشاريع')),
-              ...projectEntries.map((e) => DropdownMenuItem<String?>(
-                    value: e.key,
-                    child: Text(e.value, overflow: TextOverflow.ellipsis),
-                  )),
-            ],
-            onChanged: (v) => setState(() => _projectFilter = v),
           ),
-          const SizedBox(height: 12),
-          Row(
-            children: [
-              Expanded(
-                child: OutlinedButton.icon(
-                  onPressed: _pickDate,
-                  icon: const Icon(Icons.calendar_today, size: 18),
-                  label: Text(
-                    _dateFilter == null
-                        ? 'كل التواريخ'
-                        : Fmt.date(_dateFilter),
-                  ),
-                ),
-              ),
-              if (_dateFilter != null)
-                IconButton(
-                  tooltip: 'إلغاء فلتر التاريخ',
-                  onPressed: () => setState(() => _dateFilter = null),
-                  icon: const Icon(Icons.close, color: AppColors.creamDim),
-                ),
-            ],
-          ),
-          if (hasFilter) ...[
-            const SizedBox(height: 4),
-            Align(
-              alignment: Alignment.centerLeft,
-              child: TextButton.icon(
-                onPressed: () => setState(() {
-                  _uidFilter = null;
-                  _projectFilter = null;
-                  _dateFilter = null;
-                }),
-                icon: const Icon(Icons.clear_all, size: 18),
-                label: const Text('مسح كل الفلاتر'),
-              ),
+          if (_from != null || _to != null)
+            IconButton(
+              tooltip: 'مسح الفلتر',
+              icon: const Icon(Icons.close, color: AppColors.creamDim),
+              onPressed: () => setState(() {
+                _from = null;
+                _to = null;
+              }),
             ),
-          ],
         ],
       ),
+    );
+  }
+
+  /// قائمة **كل الموظفين** (واحد أسفل الآخر) مع عدد تقارير كلٍّ منهم (حتى صفر).
+  Widget _employeesView(List<AppUser> employees, List<DailyReport> all) {
+    final counts = <String, int>{};
+    for (final r in all) {
+      if (r.uid.isEmpty) continue;
+      if (_passes(r.date)) counts[r.uid] = (counts[r.uid] ?? 0) + 1;
+    }
+    final emps = [...employees]..sort((a, b) => a.name.compareTo(b.name));
+
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        const PageHeader(
+          title: 'تقارير الموظفين',
+          subtitle: 'كل الموظفين — اختر موظفًا لعرض تقاريره من الأحدث',
+          icon: Icons.event_note,
+        ),
+        const SizedBox(height: 12),
+        _periodFilter(),
+        _dateFilter(),
+        const SizedBox(height: 12),
+        if (emps.isEmpty)
+          const EmptyState(
+              message: 'لا يوجد موظفون.', icon: Icons.group_off)
+        else
+          ...emps.map((e) {
+            final name = e.name.isEmpty ? 'موظف' : e.name;
+            final n = counts[e.uid] ?? 0;
+            return Card(
+              child: ListTile(
+                leading: CircleAvatar(
+                  backgroundColor: AppColors.oliveDark,
+                  child: Text(name.isNotEmpty ? name[0] : '؟',
+                      style: const TextStyle(color: AppColors.cream)),
+                ),
+                title: Text(name,
+                    style: const TextStyle(
+                        color: AppColors.cream, fontWeight: FontWeight.bold)),
+                subtitle: Text('${e.role.labelAr}  •  $n تقرير',
+                    style: const TextStyle(color: AppColors.creamDim)),
+                trailing:
+                    const Icon(Icons.chevron_left, color: AppColors.creamDim),
+                onTap: () => setState(() {
+                  _uid = e.uid;
+                  _selectedName = name;
+                }),
+              ),
+            );
+          }),
+      ],
+    );
+  }
+
+  /// تقارير موظف واحد من الأحدث للأقدم (ضمن نطاق التاريخ المختار).
+  Widget _employeeReports(List<DailyReport> all) {
+    final reports = all
+        .where((r) => r.uid == _uid && _passes(r.date))
+        .toList()
+      ..sort((a, b) => b.date.compareTo(a.date)); // الأحدث أولاً
+
+    return ListView(
+      padding: const EdgeInsets.all(14),
+      children: [
+        Row(
+          children: [
+            IconButton(
+              tooltip: 'كل الموظفين',
+              icon: const Icon(Icons.arrow_forward, color: AppColors.cream),
+              onPressed: () => setState(() => _uid = null),
+            ),
+            Expanded(
+              child: Text('تقارير: $_selectedName',
+                  style: const TextStyle(
+                      color: AppColors.cream,
+                      fontSize: 18,
+                      fontWeight: FontWeight.w800)),
+            ),
+          ],
+        ),
+        const SizedBox(height: 8),
+        _periodFilter(),
+        _dateFilter(),
+        const SizedBox(height: 8),
+        Text('عدد التقارير: ${reports.length}',
+            style: const TextStyle(
+                color: AppColors.creamDim, fontWeight: FontWeight.w600)),
+        const SizedBox(height: 8),
+        if (reports.isEmpty)
+          const EmptyState(
+              message: 'لا توجد تقارير في هذه الفترة.', icon: Icons.event_busy)
+        else
+          ...reports.map(_reportTile),
+      ],
     );
   }
 
   Widget _reportTile(DailyReport r) {
     return Card(
       child: ExpansionTile(
-        leading:
-            const Icon(Icons.event_note, color: AppColors.oliveBright),
-        title: Text(
-          r.userName.isEmpty ? 'موظف' : r.userName,
-          style: const TextStyle(
-              color: AppColors.cream, fontWeight: FontWeight.bold),
-        ),
-        subtitle: Text(
-          '${Fmt.date(r.date)}'
-          '${r.projectName.isNotEmpty ? ' • 🔗 ${r.projectName}' : ''}',
-          style: const TextStyle(color: AppColors.creamDim, fontSize: 12),
-        ),
-        childrenPadding:
-            const EdgeInsets.fromLTRB(16, 0, 16, 14),
+        leading: const Icon(Icons.event_note, color: AppColors.oliveBright),
+        title: Text(Fmt.date(r.date),
+            style: const TextStyle(
+                color: AppColors.cream, fontWeight: FontWeight.bold)),
+        subtitle: r.projectName.isEmpty
+            ? null
+            : Text('🔗 ${r.projectName}',
+                style: const TextStyle(color: AppColors.creamDim, fontSize: 12)),
+        childrenPadding: const EdgeInsets.fromLTRB(16, 0, 16, 14),
         expandedCrossAxisAlignment: CrossAxisAlignment.start,
         children: [
-          Text(r.content,
+          Text(r.content.isEmpty ? 'لا يوجد محتوى.' : r.content,
               style: const TextStyle(color: AppColors.cream, height: 1.6)),
         ],
       ),

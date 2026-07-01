@@ -42,6 +42,13 @@ class Expense {
     required this.date,
   });
 
+  static DateTime? _toDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
   factory Expense.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
     return Expense(
@@ -54,7 +61,7 @@ class Expense {
       type: ExpenseTypeX.fromId(m['type'] as String?),
       amount: (m['amount'] as num?) ?? 0,
       note: (m['note'] ?? '') as String,
-      date: (m['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
+      date: _toDate(m['date']) ?? DateTime.now(),
     );
   }
 

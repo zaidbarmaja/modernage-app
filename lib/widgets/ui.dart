@@ -1,4 +1,4 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../core/theme.dart';
 
@@ -119,27 +119,38 @@ class StatTile extends StatelessWidget {
   Widget build(BuildContext context) {
     final c = color ?? AppColors.oliveBright;
     return Container(
-      padding: const EdgeInsets.symmetric(vertical: 14, horizontal: 10),
+      padding: const EdgeInsets.symmetric(vertical: 10, horizontal: 8),
       decoration: BoxDecoration(
         color: AppColors.surfaceAlt,
         borderRadius: BorderRadius.circular(14),
         border: Border.all(color: c.withValues(alpha: 0.4)),
       ),
+      // مرن لا يتمزّق: العنوان يُصغَّر تلقائياً، والوصف يُقصَّ بسطرين كحدّ أقصى.
       child: Column(
+        mainAxisAlignment: MainAxisAlignment.center,
         children: [
-          Icon(icon, color: c, size: 24),
-          const SizedBox(height: 8),
-          Text(
-            value,
-            textAlign: TextAlign.center,
-            style: TextStyle(
-                color: c, fontSize: 18, fontWeight: FontWeight.bold),
+          Icon(icon, color: c, size: 22),
+          const SizedBox(height: 6),
+          Flexible(
+            child: FittedBox(
+              fit: BoxFit.scaleDown,
+              child: Text(
+                value,
+                maxLines: 1,
+                style: TextStyle(
+                    color: c, fontSize: 18, fontWeight: FontWeight.bold),
+              ),
+            ),
           ),
-          const SizedBox(height: 4),
-          Text(
-            label,
-            textAlign: TextAlign.center,
-            style: const TextStyle(color: AppColors.creamDim, fontSize: 12),
+          const SizedBox(height: 2),
+          Flexible(
+            child: Text(
+              label,
+              textAlign: TextAlign.center,
+              maxLines: 2,
+              overflow: TextOverflow.ellipsis,
+              style: const TextStyle(color: AppColors.creamDim, fontSize: 12),
+            ),
           ),
         ],
       ),
@@ -287,7 +298,7 @@ class PageHeader extends StatelessWidget {
                   const SizedBox(height: 4),
                   Text(subtitle!,
                       style: const TextStyle(
-                          color: Color(0xFFE6EAF0), fontSize: 13)),
+                          color: Color(0xFFECEFE1), fontSize: 13)),
                 ],
               ],
             ),

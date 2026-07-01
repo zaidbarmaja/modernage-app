@@ -1,5 +1,5 @@
 name: mohameed_app
-description: "A new Flutter project."
+description: "تطبيق عصر الحداثة لإدارة المهام والحضور والتقارير."
 # The following line prevents the package from being accidentally published to
 # pub.dev using `flutter pub publish`. This is preferred for private packages.
 publish_to: 'none' # Remove this line if you wish to publish to pub.dev
@@ -49,14 +49,15 @@ dependencies:
   crypto: ^3.0.3
   shared_preferences: ^2.3.2
   file_picker: ^8.1.4
-  local_auth: ^2.3.0
   pdf: ^3.11.1
   printing: ^5.13.2
   url_launcher: ^6.3.1
   flutter_local_notifications: ^18.0.1
   timezone: ^0.9.4
   flutter_timezone: ^3.0.1
+  local_auth: ^2.3.0
   connectivity_plus: ^6.1.0
+  firebase_messaging: ^16.4.1
 
 dev_dependencies:
   flutter_test:
@@ -73,10 +74,11 @@ dev_dependencies:
 # أيقونة التطبيق على أندرويد: مولّدة من شعار «عصر الحداثة» على خلفية سوداء.
 flutter_launcher_icons:
   android: true
-  ios: false
-  image_path: "assets/images/logo_icon.png"
-  adaptive_icon_background: "#000000"
-  adaptive_icon_foreground: "assets/images/logo_icon.png"
+  ios: true
+  remove_alpha_ios: true
+  image_path: "assets/images/app_icon.png"
+  adaptive_icon_background: "#FFFFFF"
+  adaptive_icon_foreground: "assets/images/app_icon_fg.png"
   min_sdk_android: 23
 
 # For information on the generic Dart part of this file, see the

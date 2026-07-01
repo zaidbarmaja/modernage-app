@@ -46,3 +46,18 @@ app.*.map.json
 
 # Accidental nested repo
 /mohameed_app/
+
+# ---- أسرار وإعدادات محلية (لا تُرفع إلى مستودع عام) ----
+# ملف إعداد الداشبورد يحوي كلمة مرور المدير — يُنشأ محلياً من config.example.js
+/DASHBORD/js/config.js
+# تطبيق «modage» منفصل بإعدادات/أسرار خاصة به
+/modage/
+# اعتمادات Cloud Functions
+/functions/node_modules/
+# ملفات Firebase المؤقتة
+.firebase/
+.runtimeconfig.json
+# توقيع الإصدار (احتياط إضافي)
+**/*.jks
+**/*.keystore
+/android/key.properties

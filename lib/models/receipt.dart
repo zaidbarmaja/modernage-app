@@ -10,8 +10,10 @@ class Receipt {
   final String ownerName; // صاحب المشروع
   final String? projectId; // ربط بمشروع تصميم إن وُجد
   final String? customerUid; // لظهور الوصل في بوابة الزبون
-  final num amount; // المبلغ المدفوع
+  final num amount; // المبلغ (مقبوض أو مصروف)
+  final bool expense; // false = وصل قبض، true = وصل صرف
   final String description; // وصف الدفعة
+  final String recipient; // المستلِم (اسم من استلم/سُلِّم له المبلغ)
   final String imageUrl; // رابط صورة الوصل في Storage (قد يكون فارغاً)
   final String createdByUid; // منشئ الوصل (موظف التنفيذ)
   final String createdByName;
@@ -26,7 +28,9 @@ class Receipt {
     this.projectId,
     this.customerUid,
     required this.amount,
+    this.expense = false,
     this.description = '',
+    this.recipient = '',
     this.imageUrl = '',
     required this.createdByUid,
     required this.createdByName,
@@ -38,22 +42,36 @@ class Receipt {
   String get shortNo =>
       id.isEmpty ? '—' : id.substring(0, id.length < 6 ? id.length : 6).toUpperCase();
 
+  /// يحوّل قيمة تاريخ سواء كانت Timestamp أو نصًا ISO أو DateTime (للتوافق مع
+  /// الوصولات القديمة التي خُزِّن تاريخها كنصّ في النظام السابق).
+  static DateTime? _toDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
+  static String _str(dynamic v) => v == null ? '' : v.toString();
+
   factory Receipt.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
     return Receipt(
       id: doc.id,
-      siteId: (m['siteId'] ?? '') as String,
-      siteName: (m['siteName'] ?? '') as String,
-      ownerName: (m['ownerName'] ?? '') as String,
-      projectId: m['projectId'] as String?,
-      customerUid: m['customerUid'] as String?,
+      siteId: _str(m['siteId']),
+      siteName: _str(m['siteName']),
+      ownerName: _str(m['ownerName']),
+      projectId: m['projectId']?.toString(),
+      customerUid: m['customerUid']?.toString(),
       amount: (m['amount'] as num?) ?? 0,
-      description: (m['description'] ?? '') as String,
-      imageUrl: (m['imageUrl'] ?? '') as String,
-      createdByUid: (m['createdByUid'] ?? '') as String,
-      createdByName: (m['createdByName'] ?? '') as String,
-      date: (m['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      createdAt: (m['createdAt'] as Timestamp?)?.toDate(),
+      expense: (m['expense'] as bool?) ?? false,
+      // الحقول القديمة: 'note' بدل 'description' و'payer' بدل 'recipient'.
+      description: _str(m['description'] ?? m['note']),
+      recipient: _str(m['recipient'] ?? m['payer']),
+      imageUrl: _str(m['imageUrl']),
+      createdByUid: _str(m['createdByUid'] ?? m['employeeId']),
+      createdByName: _str(m['createdByName']),
+      date: _toDate(m['date']) ?? _toDate(m['createdAt']) ?? DateTime.now(),
+      createdAt: _toDate(m['createdAt']),
     );
   }
 
@@ -64,7 +82,9 @@ class Receipt {
         'projectId': projectId,
         'customerUid': customerUid,
         'amount': amount,
+        'expense': expense,
         'description': description,
+        'recipient': recipient,
         'imageUrl': imageUrl,
         'createdByUid': createdByUid,
         'createdByName': createdByName,

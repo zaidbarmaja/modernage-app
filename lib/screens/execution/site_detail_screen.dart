@@ -1,24 +1,22 @@
-import 'package:flutter/material.dart';
+﻿import 'package:flutter/material.dart';
 
 import '../../core/constants.dart';
 import '../../core/format.dart';
 import '../../core/theme.dart';
-import '../../models/app_notification.dart';
 import '../../models/app_user.dart';
 import '../../models/execution_report.dart';
 import '../../models/receipt.dart';
-import '../../models/site_checkin.dart';
 import '../../models/work_site.dart';
 import '../../services/firestore_service.dart';
-import '../../services/location_service.dart';
 import '../../widgets/execution_widgets.dart';
+import '../../widgets/owner_account.dart';
+import '../../widgets/receipt_tile.dart';
 import '../../widgets/ui.dart';
-import 'receipt_detail_screen.dart';
 import 'receipt_form.dart';
 import 'report_form.dart';
 
-/// تفاصيل موقع عمل: تسجيل الدخول للموقع + التقارير + السلف والصرفيات.
-/// [interactive] = false عند العرض من المحاسبة/الزبون.
+/// تفاصيل موقع عمل: التقارير + الوصولات (الحضور يُسجَّل تلقائيًا بالموقع، فلا
+/// يوجد تسجيل دخول يدوي للموقع). [interactive] = false عند العرض من المحاسبة/الزبون.
 class SiteDetailScreen extends StatelessWidget {
   final WorkSite site;
   final AppUser user;
@@ -34,7 +32,7 @@ class SiteDetailScreen extends StatelessWidget {
   @override
   Widget build(BuildContext context) {
     return DefaultTabController(
-      length: 3,
+      length: 2,
       child: Scaffold(
         appBar: AppBar(
           title: Text(site.siteName.isEmpty ? site.ownerName : site.siteName),
@@ -44,7 +42,6 @@ class SiteDetailScreen extends StatelessWidget {
             unselectedLabelColor: AppColors.creamDim,
             indicatorColor: AppColors.oliveBright,
             tabs: [
-              Tab(text: 'دخول الموقع', icon: Icon(Icons.location_on)),
               Tab(text: 'التقارير', icon: Icon(Icons.assignment)),
               Tab(text: 'الوصولات', icon: Icon(Icons.receipt_long)),
             ],
@@ -53,11 +50,13 @@ class SiteDetailScreen extends StatelessWidget {
         body: Column(
           children: [
             _SiteHeader(site: site),
+            Padding(
+              padding: const EdgeInsets.symmetric(horizontal: 12),
+              child: OwnerAccountCard(ownerName: site.ownerName),
+            ),
             Expanded(
               child: TabBarView(
                 children: [
-                  _CheckinTab(
-                      site: site, user: user, interactive: interactive),
                   _ReportsTab(
                       site: site, user: user, interactive: interactive),
                   _ReceiptsTab(
@@ -126,11 +125,11 @@ class _SiteHeader extends StatelessWidget {
             const SizedBox(height: 6),
             Row(
               children: [
-                const Icon(Icons.place, color: Color(0xFFE6EAF0), size: 18),
+                const Icon(Icons.place, color: Color(0xFFECEFE1), size: 18),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(site.address,
-                      style: const TextStyle(color: Color(0xFFE6EAF0))),
+                      style: const TextStyle(color: Color(0xFFECEFE1))),
                 ),
               ],
             ),
@@ -140,12 +139,12 @@ class _SiteHeader extends StatelessWidget {
             Row(
               children: [
                 const Icon(Icons.engineering,
-                    color: Color(0xFFE6EAF0), size: 18),
+                    color: Color(0xFFECEFE1), size: 18),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
                       '${site.executorCount > 1 ? 'المنفّذون' : 'المنفّذ'}: ${site.executorsLabel}',
-                      style: const TextStyle(color: Color(0xFFE6EAF0))),
+                      style: const TextStyle(color: Color(0xFFECEFE1))),
                 ),
               ],
             ),
@@ -153,134 +152,10 @@ class _SiteHeader extends StatelessWidget {
           if (site.durationDays != null) ...[
             const SizedBox(height: 6),
             Text('مدة التنفيذ المتوقعة: ${site.durationDays} يوم',
-                style: const TextStyle(color: Color(0xFFE6EAF0))),
+                style: const TextStyle(color: Color(0xFFECEFE1))),
           ],
         ],
       ),
-    );
-  }
-}
-
-/// تبويب تسجيل الدخول للموقع.
-class _CheckinTab extends StatefulWidget {
-  final WorkSite site;
-  final AppUser user;
-  final bool interactive;
-  const _CheckinTab(
-      {required this.site, required this.user, required this.interactive});
-
-  @override
-  State<_CheckinTab> createState() => _CheckinTabState();
-}
-
-class _CheckinTabState extends State<_CheckinTab> {
-  final _fs = FirestoreService();
-  bool _busy = false;
-
-  static const _gpsToleranceM = 25; // سماحية دقّة GPS
-
-  Future<void> _checkIn() async {
-    setState(() => _busy = true);
-    try {
-      final loc = await LocationService.getCurrentLocation();
-      // T-3.1: تقييد دخول الموقع جغرافياً — يُرفض الدخول من خارج نطاق الموقع.
-      final s = widget.site;
-      if (s.lat != null && s.lng != null) {
-        final d =
-            LocationService.distanceMeters(loc.lat, loc.lng, s.lat!, s.lng!);
-        final allowed = s.radius + _gpsToleranceM;
-        if (d > allowed) {
-          if (mounted) {
-            showSnack(
-                context,
-                'أنت خارج نطاق الموقع — تبعد ${d.round()} م والمسموح ${allowed.round()} م. '
-                'اقترب من موقع العمل لتسجيل الدخول.',
-                error: true);
-          }
-          return; // لا يُسجَّل الدخول خارج النطاق
-        }
-      }
-      final now = DateTime.now();
-      await _fs.addSiteCheckin(SiteCheckin(
-        id: '',
-        siteId: widget.site.id,
-        siteName: widget.site.siteName,
-        ownerName: widget.site.ownerName,
-        executorUid: widget.user.uid,
-        executorName: widget.user.name,
-        lat: loc.lat,
-        lng: loc.lng,
-        address: loc.address,
-        time: now,
-      ));
-      // إشعار دخول الموقع للوحة الإدارة.
-      await _fs.addNotification(AppNotification(
-        id: '',
-        type: 'site_checkin',
-        title: 'دخول موقع: ${widget.site.ownerName}',
-        body:
-            '${widget.user.name} سجّل الدخول إلى الموقع${loc.address.isEmpty ? '' : ' (${loc.address})'} الساعة ${Fmt.time(now)}',
-        fromUid: widget.user.uid,
-        fromName: widget.user.name,
-        relatedId: widget.site.id,
-        lat: loc.lat,
-        lng: loc.lng,
-      ));
-      if (mounted) {
-        showSnack(context, 'تم تسجيل الدخول للموقع وإرسال إشعار للإدارة ✓');
-      }
-    } on LocationException catch (e) {
-      if (mounted) showSnack(context, e.message, error: true);
-    } catch (_) {
-      if (mounted) showSnack(context, 'تعذّر تسجيل الدخول للموقع.', error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return Column(
-      children: [
-        if (widget.interactive)
-          Padding(
-            padding: const EdgeInsets.symmetric(horizontal: 12),
-            child: SizedBox(
-              width: double.infinity,
-              child: ElevatedButton.icon(
-                onPressed: _busy ? null : _checkIn,
-                icon: _busy
-                    ? const SizedBox(
-                        width: 18,
-                        height: 18,
-                        child: CircularProgressIndicator(
-                            color: AppColors.cream, strokeWidth: 2.2))
-                    : const Icon(Icons.my_location),
-                label: const Text('تسجيل الدخول للموقع (إرسال الموقع للإدارة)'),
-              ),
-            ),
-          ),
-        Expanded(
-          child: StreamBuilder<List<SiteCheckin>>(
-            stream: _fs.checkinsBySite(widget.site.id),
-            builder: (context, snapshot) {
-              if (snapshot.connectionState == ConnectionState.waiting) {
-                return const LoadingView();
-              }
-              final items = snapshot.data ?? [];
-              if (items.isEmpty) {
-                return const EmptyState(
-                    message: 'لا توجد تسجيلات دخول لهذا الموقع بعد.',
-                    icon: Icons.location_off);
-              }
-              return ListView(
-                padding: const EdgeInsets.all(12),
-                children: items.map((c) => SiteCheckinTile(checkin: c)).toList(),
-              );
-            },
-          ),
-        ),
-      ],
     );
   }
 }
@@ -384,24 +259,39 @@ class _ReceiptsTab extends StatelessWidget {
                     icon: Icons.error_outline);
               }
               final items = snapshot.data ?? [];
-              num total = 0;
+              num totalIn = 0, totalOut = 0;
               for (final r in items) {
-                total += r.amount;
+                if (r.expense) {
+                  totalOut += r.amount;
+                } else {
+                  totalIn += r.amount;
+                }
               }
+              final net = totalIn - totalOut;
               return ListView(
                 padding: const EdgeInsets.all(12),
                 children: [
                   SectionCard(
-                    title: 'إجمالي المدفوعات',
+                    title: 'ملخّص الوصولات',
                     icon: Icons.summarize,
                     child: Column(
                       children: [
                         InfoRow(
                             label: 'عدد الوصولات', value: '${items.length}'),
                         InfoRow(
-                            label: 'إجمالي المبالغ',
-                            value: Fmt.money(total),
+                            label: 'إجمالي القبض',
+                            value: Fmt.money(totalIn),
                             valueColor: AppColors.success),
+                        InfoRow(
+                            label: 'إجمالي الصرف',
+                            value: Fmt.money(totalOut),
+                            valueColor: AppColors.danger),
+                        InfoRow(
+                            label: 'الصافي',
+                            value: Fmt.money(net),
+                            valueColor: net >= 0
+                                ? AppColors.success
+                                : AppColors.danger),
                       ],
                     ),
                   ),
@@ -411,7 +301,7 @@ class _ReceiptsTab extends StatelessWidget {
                         message: 'لا توجد وصولات لهذا الموقع بعد.',
                         icon: Icons.receipt_long)
                   else
-                    ...items.map((r) => _ReceiptTile(receipt: r)),
+                    ...items.map((r) => ReceiptTile(receipt: r)),
                 ],
               );
             },
@@ -422,42 +312,4 @@ class _ReceiptsTab extends StatelessWidget {
   }
 }
 
-/// عنصر وصل واحد في القائمة — يفتح تفاصيله عند الضغط.
-class _ReceiptTile extends StatelessWidget {
-  final Receipt receipt;
-  const _ReceiptTile({required this.receipt});
-
-  @override
-  Widget build(BuildContext context) {
-    return Card(
-      child: ListTile(
-        leading: receipt.imageUrl.isEmpty
-            ? const Icon(Icons.receipt, color: AppColors.oliveBright)
-            : ClipRRect(
-                borderRadius: BorderRadius.circular(8),
-                child: Image.network(receipt.imageUrl,
-                    width: 44, height: 44, fit: BoxFit.cover,
-                    errorBuilder: (_, _, _) =>
-                        const Icon(Icons.receipt, color: AppColors.oliveBright)),
-              ),
-        title: Text(Fmt.money(receipt.amount),
-            style: const TextStyle(
-                color: AppColors.cream, fontWeight: FontWeight.bold)),
-        subtitle: Text(
-          '${receipt.description.isEmpty ? 'وصل' : receipt.description}\n'
-          'رقم ${receipt.shortNo} • ${Fmt.date(receipt.date)}',
-          style: const TextStyle(color: AppColors.creamDim, height: 1.4),
-        ),
-        isThreeLine: true,
-        trailing:
-            const Icon(Icons.chevron_left, color: AppColors.creamDim),
-        onTap: () => Navigator.push(
-          context,
-          MaterialPageRoute(
-              builder: (_) => ReceiptDetailScreen(receipt: receipt)),
-        ),
-      ),
-    );
-  }
-}
 

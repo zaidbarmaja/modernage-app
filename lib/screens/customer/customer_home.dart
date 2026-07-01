@@ -1,20 +1,19 @@
+import 'package:cloud_firestore/cloud_firestore.dart';
 import 'package:flutter/material.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/daily_report.dart';
-import '../../models/receipt.dart';
-import '../../services/auth_service.dart';
+import '../../services/firebase_service.dart';
 import '../../services/firestore_service.dart';
 import '../../widgets/app_actions.dart';
 import '../../widgets/notifications_view.dart';
 import '../../widgets/ui.dart';
-import '../execution/receipt_detail_screen.dart';
 import 'customer_overview.dart';
 
-/// بوابة الزبون (المرحلة 4): نظرة عامة على مشاريعه (تصميم/تنفيذ) + الوصولات
-/// والمدفوعات + التقارير ذات الصلة — كلها قراءة فقط ولبياناته هو فقط.
+/// بوابة الزبون: نظرة عامة على مشاريعه (تصميم/تنفيذ) + الوصولات والمدفوعات +
+/// التقارير ذات الصلة + الإشعارات — كلها قراءة فقط ولبياناته هو فقط (بلا إعدادات).
 class CustomerHome extends StatefulWidget {
   final AppUser user;
   const CustomerHome({super.key, required this.user});
@@ -28,24 +27,22 @@ class _CustomerHomeState extends State<CustomerHome> {
 
   static const _titles = [
     'صفحتي',
-    'الوصولات',
+    'الحسابات',
     'التقارير',
     'الإشعارات',
-    'الإعدادات',
   ];
 
   @override
   Widget build(BuildContext context) {
     final u = widget.user;
     final fs = FirestoreService();
-    // بناء كسول: يُبنى التبويب النشط فقط (لا تبقى مستمعات Firestore لتبويبات مخفية).
+    // بناء كسول: يُبنى التبويب النشط فقط (لا تبقى مستمعات Firestore للمخفية).
     final Widget body = switch (_index) {
       0 => CustomerOverview(
           customerUid: u.uid, customerName: u.name, viewer: u),
-      1 => _CustomerReceiptsTab(customerUid: u.uid),
+      1 => _CustomerAccountsTab(customerName: u.name),
       2 => _CustomerReportsTab(customerUid: u.uid),
-      3 => NotificationsView(stream: fs.notificationsForUser(u.uid)),
-      _ => _CustomerSettingsTab(user: u),
+      _ => NotificationsView(stream: fs.notificationsForUser(u.uid)),
     };
     return Scaffold(
       appBar: AppBar(
@@ -62,93 +59,163 @@ class _CustomerHomeState extends State<CustomerHome> {
           NavigationDestination(
               icon: Icon(Icons.dashboard_outlined), label: 'صفحتي'),
           NavigationDestination(
-              icon: Icon(Icons.receipt_long), label: 'الوصولات'),
+              icon: Icon(Icons.account_balance_wallet), label: 'الحسابات'),
           NavigationDestination(
               icon: Icon(Icons.event_note), label: 'التقارير'),
           NavigationDestination(
               icon: Icon(Icons.notifications_outlined), label: 'الإشعارات'),
-          NavigationDestination(
-              icon: Icon(Icons.settings_outlined), label: 'الإعدادات'),
         ],
       ),
     );
   }
 }
 
-/// تبويب الوصولات والمدفوعات للزبون (T-4.3): إجمالي + قائمة كل وصولاته.
-class _CustomerReceiptsTab extends StatelessWidget {
-  final String customerUid;
-  const _CustomerReceiptsTab({required this.customerUid});
+/// تبويب «الحسابات» للزبون: كشف حساب مبسّط مناسب للهاتف (نسخة من نظام الحسابات)
+/// — يعرض حسابات هذا الزبون فقط من قاعدة المحاسبة المشتركة (مطابقة بالاسم)،
+/// متضمّناً وصولات الدفع الإلكتروني. استعلام محدود بالاسم لتقليل قراءات القاعدة
+/// (لا يقرأ كامل المجموعة).
+class _CustomerAccountsTab extends StatelessWidget {
+  final String customerName;
+  const _CustomerAccountsTab({required this.customerName});
+
+  static num _num(dynamic v) {
+    if (v is num) return v;
+    return num.tryParse('$v'.replaceAll(',', '').trim()) ?? 0;
+  }
+
+  static DateTime? _dt(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    return DateTime.tryParse('$v');
+  }
 
   @override
   Widget build(BuildContext context) {
-    final fs = FirestoreService();
-    return StreamBuilder<List<Receipt>>(
-      stream: fs.receiptsByCustomer(customerUid),
+    final name = customerName.trim();
+    if (name.isEmpty) {
+      return const EmptyState(
+          message: 'لا يوجد حساب مرتبط بهذا الزبون.',
+          icon: Icons.account_balance_wallet);
+    }
+    return StreamBuilder<QuerySnapshot<Map<String, dynamic>>>(
+      // استعلام محدود بحركات هذا الزبون فقط — تقليل كبير لقراءات Firestore.
+      stream: Db.customerTransactions
+          .where('customerName', isEqualTo: name)
+          .snapshots(),
       builder: (context, snap) {
         if (snap.connectionState == ConnectionState.waiting) {
           return const LoadingView();
         }
         if (snap.hasError) {
           return const EmptyState(
-              message: 'تعذّر تحميل الوصولات.', icon: Icons.error_outline);
+              message: 'تعذّر تحميل الحسابات.', icon: Icons.error_outline);
         }
-        final receipts = snap.data ?? const <Receipt>[];
-        num total = 0;
-        for (final r in receipts) {
-          total += r.amount;
+        final rows = (snap.data?.docs ?? [])
+            .map((d) => d.data())
+            .where((m) => m['deleted'] != true)
+            .toList();
+        if (rows.isEmpty) {
+          return const EmptyState(
+              message: 'لا توجد حركات في حسابك بعد.',
+              icon: Icons.account_balance_wallet);
         }
+        // قاعدة «المجموع اليدوي»: إن وُجد صف مجموع يدوي يُعتمد وحده.
+        final hasManual = rows.any((t) => t['isManualTotal'] == true);
+        num receipt = 0, expense = 0;
+        for (final t in rows) {
+          if ((t['isManualTotal'] == true) != hasManual) continue;
+          receipt += _num(t['receipt']);
+          expense += _num(t['expense']);
+        }
+        final balance = receipt - expense;
+        final sorted = rows.toList()
+          ..sort((a, b) => (_dt(b['datetime']) ?? DateTime(2000))
+              .compareTo(_dt(a['datetime']) ?? DateTime(2000)));
         return ListView(
           padding: const EdgeInsets.all(14),
           children: [
             const PageHeader(
-              title: 'الوصولات والمدفوعات',
-              subtitle: 'كل المبالغ المدفوعة في مشاريعك',
-              icon: Icons.receipt_long,
+              title: 'حساباتي',
+              subtitle: 'كشف حساب مبسّط بكل حركاتك',
+              icon: Icons.account_balance_wallet,
             ),
             const SizedBox(height: 12),
-            SectionCard(
-              title: 'الإجمالي',
-              icon: Icons.summarize,
-              child: Column(
-                children: [
-                  InfoRow(label: 'عدد الوصولات', value: '${receipts.length}'),
-                  InfoRow(
-                      label: 'إجمالي المدفوعات',
-                      value: Fmt.money(total),
-                      valueColor: AppColors.success),
-                ],
-              ),
+            GridView.count(
+              crossAxisCount: 3,
+              shrinkWrap: true,
+              physics: const NeverScrollableScrollPhysics(),
+              mainAxisSpacing: 10,
+              crossAxisSpacing: 10,
+              childAspectRatio: 0.95,
+              children: [
+                StatTile(
+                    value: Fmt.money(receipt),
+                    label: 'المدفوع',
+                    icon: Icons.price_check,
+                    color: AppColors.success),
+                StatTile(
+                    value: Fmt.money(expense),
+                    label: 'المصروف',
+                    icon: Icons.payments,
+                    color: AppColors.danger),
+                StatTile(
+                    value: Fmt.money(balance),
+                    label: 'الرصيد',
+                    icon: Icons.account_balance,
+                    color:
+                        balance >= 0 ? AppColors.success : AppColors.danger),
+              ],
             ),
-            const SizedBox(height: 12),
-            if (receipts.isEmpty)
-              const EmptyState(
-                  message: 'لا توجد وصولات بعد.', icon: Icons.receipt_long)
-            else
-              ...receipts.map((r) => Card(
-                    child: ListTile(
-                      leading: const Icon(Icons.receipt_long,
-                          color: AppColors.success),
-                      title: Text(Fmt.money(r.amount),
-                          style: const TextStyle(
-                              color: AppColors.cream,
-                              fontWeight: FontWeight.bold)),
-                      subtitle: Text(
-                        '${r.description.isEmpty ? 'وصل' : r.description}\n'
-                        'رقم ${r.shortNo} • ${Fmt.date(r.date)}',
-                        style: const TextStyle(
-                            color: AppColors.creamDim, height: 1.4),
-                      ),
-                      isThreeLine: true,
-                      trailing: const Icon(Icons.chevron_left,
-                          color: AppColors.creamDim),
-                      onTap: () => Navigator.push(
-                        context,
-                        MaterialPageRoute(
-                            builder: (_) => ReceiptDetailScreen(receipt: r)),
-                      ),
-                    ),
-                  )),
+            const SizedBox(height: 14),
+            const Text('الحركات',
+                style: TextStyle(
+                    color: AppColors.cream,
+                    fontSize: 16,
+                    fontWeight: FontWeight.bold)),
+            const SizedBox(height: 6),
+            ...sorted.map((t) {
+              final r = _num(t['receipt']);
+              final e = _num(t['expense']);
+              final isReceipt = r >= e;
+              final amount = isReceipt ? r : e;
+              final electronic = t['source'] == 'electronic';
+              final desc = '${t['description'] ?? ''}'.trim();
+              final d = _dt(t['datetime']);
+              final color =
+                  isReceipt ? AppColors.success : AppColors.danger;
+              return Card(
+                child: ListTile(
+                  leading: Icon(
+                      isReceipt ? Icons.south_west : Icons.north_east,
+                      color: color),
+                  title: Text('${isReceipt ? 'قبض' : 'صرف'}: ${Fmt.money(amount)}',
+                      style: TextStyle(
+                          color: color, fontWeight: FontWeight.bold)),
+                  subtitle: Text(
+                    '${desc.isEmpty ? (isReceipt ? 'دفعة' : 'صرف') : desc}'
+                    '${d != null ? '\n${Fmt.date(d)}' : ''}',
+                    style: const TextStyle(
+                        color: AppColors.creamDim, height: 1.4),
+                  ),
+                  isThreeLine: d != null,
+                  trailing: electronic
+                      ? Container(
+                          padding: const EdgeInsets.symmetric(
+                              horizontal: 8, vertical: 3),
+                          decoration: BoxDecoration(
+                            color: AppColors.oliveBright
+                                .withValues(alpha: 0.18),
+                            borderRadius: BorderRadius.circular(20),
+                          ),
+                          child: const Text('إلكتروني',
+                              style: TextStyle(
+                                  color: AppColors.oliveBright,
+                                  fontSize: 11)),
+                        )
+                      : null,
+                ),
+              );
+            }),
           ],
         );
       },
@@ -156,8 +223,7 @@ class _CustomerReceiptsTab extends StatelessWidget {
   }
 }
 
-/// تبويب التقارير ذات الصلة للزبون (T-4.4): يجمع معرّفات مشاريع/مواقع الزبون
-/// ثم يعرض التقارير المرتبطة بها فقط (لا تظهر بيانات مشاريع أخرى).
+/// تبويب التقارير ذات الصلة للزبون: يعرض التقارير المرتبطة بمشاريعه فقط.
 class _CustomerReportsTab extends StatelessWidget {
   final String customerUid;
   const _CustomerReportsTab({required this.customerUid});
@@ -213,144 +279,6 @@ class _CustomerReportsTab extends StatelessWidget {
           ],
         );
       },
-    );
-  }
-}
-
-/// تبويب إعدادات الزبون: معلومات حسابه + تغيير رمز الدخول (٤ أرقام).
-class _CustomerSettingsTab extends StatefulWidget {
-  final AppUser user;
-  const _CustomerSettingsTab({required this.user});
-
-  @override
-  State<_CustomerSettingsTab> createState() => _CustomerSettingsTabState();
-}
-
-class _CustomerSettingsTabState extends State<_CustomerSettingsTab> {
-  final _fs = FirestoreService();
-  final _formKey = GlobalKey<FormState>();
-  final _code = TextEditingController();
-  final _confirm = TextEditingController();
-  bool _obscure = true;
-  bool _busy = false;
-
-  @override
-  void dispose() {
-    _code.dispose();
-    _confirm.dispose();
-    super.dispose();
-  }
-
-  Future<void> _changeCode() async {
-    if (!_formKey.currentState!.validate()) return;
-    setState(() => _busy = true);
-    try {
-      final c = AuthService.makeCredential(widget.user.uid, _code.text.trim());
-      await _fs.setUserPassword(widget.user.uid, c['salt']!, c['hash']!);
-      if (mounted) {
-        _code.clear();
-        _confirm.clear();
-        FocusScope.of(context).unfocus();
-        showSnack(context, 'تم تغيير رمز الدخول ✓ — استخدمه في الدخول القادم.');
-      }
-    } catch (_) {
-      if (mounted) showSnack(context, 'تعذّر تغيير الرمز.', error: true);
-    } finally {
-      if (mounted) setState(() => _busy = false);
-    }
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    final u = widget.user;
-    return ListView(
-      padding: const EdgeInsets.all(14),
-      children: [
-        const PageHeader(
-          title: 'الإعدادات',
-          subtitle: 'حسابي ورمز الدخول',
-          icon: Icons.settings,
-        ),
-        const SizedBox(height: 12),
-        SectionCard(
-          title: 'معلومات الحساب',
-          icon: Icons.person,
-          child: Column(
-            children: [
-              InfoRow(label: 'الاسم', value: u.name.isEmpty ? '—' : u.name),
-              InfoRow(
-                  label: 'رقم الهاتف', value: u.phone.isEmpty ? '—' : u.phone),
-              if (u.contact.isNotEmpty)
-                InfoRow(label: 'بيانات التواصل', value: u.contact),
-            ],
-          ),
-        ),
-        const SizedBox(height: 12),
-        SectionCard(
-          title: 'تغيير رمز الدخول',
-          icon: Icons.lock_reset,
-          child: Form(
-            key: _formKey,
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.stretch,
-              children: [
-                const Text('رمز جديد من 4 أرقام تدخل به في المرة القادمة.',
-                    style: TextStyle(color: AppColors.creamDim, height: 1.5)),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _code,
-                  obscureText: _obscure,
-                  keyboardType: TextInputType.number,
-                  textDirection: TextDirection.ltr,
-                  decoration: InputDecoration(
-                    labelText: 'الرمز الجديد (4 أرقام)',
-                    prefixIcon: const Icon(Icons.vpn_key_outlined),
-                    suffixIcon: IconButton(
-                      icon: Icon(_obscure
-                          ? Icons.visibility_off
-                          : Icons.visibility),
-                      onPressed: () => setState(() => _obscure = !_obscure),
-                    ),
-                  ),
-                  validator: (v) {
-                    final t = (v ?? '').trim();
-                    if (t.length != 4 || int.tryParse(t) == null) {
-                      return 'الرمز 4 أرقام';
-                    }
-                    return null;
-                  },
-                ),
-                const SizedBox(height: 12),
-                TextFormField(
-                  controller: _confirm,
-                  obscureText: _obscure,
-                  keyboardType: TextInputType.number,
-                  textDirection: TextDirection.ltr,
-                  decoration: const InputDecoration(
-                    labelText: 'تأكيد الرمز',
-                    prefixIcon: Icon(Icons.check_circle_outline),
-                  ),
-                  validator: (v) => (v ?? '').trim() != _code.text.trim()
-                      ? 'الرمز غير متطابق'
-                      : null,
-                ),
-                const SizedBox(height: 18),
-                ElevatedButton.icon(
-                  onPressed: _busy ? null : _changeCode,
-                  icon: _busy
-                      ? const SizedBox(
-                          width: 18,
-                          height: 18,
-                          child: CircularProgressIndicator(
-                              color: AppColors.cream, strokeWidth: 2.2))
-                      : const Icon(Icons.save),
-                  label: const Text('حفظ الرمز الجديد'),
-                ),
-              ],
-            ),
-          ),
-        ),
-      ],
     );
   }
 }

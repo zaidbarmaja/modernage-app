@@ -38,6 +38,17 @@ class AuthService {
     return 'u$h@modernage.local';
   }
 
+  /// بريد مصادقة فريد لنفس مُعرّف الدخول — يُستخدم حين يكون البريد الثابت محجوزاً
+  /// من حساب قديم محذوف (لا يمكن حذف حساب Auth قديم من جهة العميل). الدخول يتم
+  /// عبر اعتماد Firestore لا عبر هذا البريد، فلا يتأثّر تسجيل الدخول.
+  String _uniqueEmail(String id) {
+    final base = _idToEmail(id).split('@').first;
+    final r = Random.secure();
+    final suffix = List.generate(
+        8, (_) => r.nextInt(36).toRadixString(36)).join();
+    return '$base-$suffix@modernage.local';
+  }
+
   /// تجزئة كلمة المرور المخزّنة في مجموعة credentials المنفصلة: ملح عشوائي لكل
   /// مستخدم + تمطيط (key stretching) لإبطاء أي هجوم تخمين. لا تُخزَّن كنصّ صريح
   /// ولا داخل ملف المستخدم.
@@ -86,6 +97,28 @@ class AuthService {
           remember ? Persistence.LOCAL : Persistence.SESSION);
     } catch (_) {
       // لا نُفشل الدخول إن تعذّر ضبط الإبقاء.
+    }
+  }
+
+  /// جلسة Firebase داخلية ثابتة (Email/Password) لدخول المدير المُتحكَّم به من
+  /// الكود (AppLogin): تُسجّل الدخول بالحساب الداخلي، وتُنشئه أول مرة إن لم يكن
+  /// موجوداً (يطابق سلوك تطبيق الويب). يتطلّب تفعيل Email/Password في Firebase.
+  Future<void> signInOrCreateInternal(String email, String password) async {
+    try {
+      await _auth.signInWithEmailAndPassword(email: email, password: password);
+    } on FirebaseAuthException catch (e) {
+      final needsSignup = e.code == 'user-not-found' ||
+          e.code == 'invalid-credential' ||
+          e.code == 'invalid-login-credentials';
+      if (!needsSignup) throw AuthException(_messageFor(e.code));
+      try {
+        await _auth.createUserWithEmailAndPassword(
+            email: email, password: password);
+      } on FirebaseAuthException catch (e2) {
+        // الحساب موجود بكلمة مرور مختلفة → أعد خطأ الدخول الأصلي للوضوح.
+        throw AuthException(_messageFor(
+            e2.code == 'email-already-in-use' ? e.code : e2.code));
+      }
     }
   }
 
@@ -177,18 +210,27 @@ class AuthService {
       );
       // كلمة Firebase داخلية قوية (لا يدخل بها المستخدم) — لتجاوز حدّ الـ٦ أحرف؛
       // الرمز الرباعي الظاهر يُخزَّن كاعتماد Firestore ويُفعَّل مساره.
-      final cred = await FirebaseAuth.instanceFor(app: secondary)
-          .createUserWithEmailAndPassword(
-        email: _idToEmail(loginId),
-        password: newSalt(),
-      );
+      final secAuth = FirebaseAuth.instanceFor(app: secondary);
+      var email = _idToEmail(loginId);
+      UserCredential cred;
+      try {
+        cred = await secAuth.createUserWithEmailAndPassword(
+            email: email, password: newSalt());
+      } on FirebaseAuthException catch (e) {
+        // البريد الثابت محجوز من حساب سابق محذوف (رقم/اسم أُعيد استخدامه) —
+        // نولّد بريداً فريداً كي ينجح الإنشاء دائماً ويتحرّر الرقم للاستخدام.
+        if (e.code != 'email-already-in-use') rethrow;
+        email = _uniqueEmail(loginId);
+        cred = await secAuth.createUserWithEmailAndPassword(
+            email: email, password: newSalt());
+      }
       final uid = cred.user!.uid;
       await cred.user!.updateDisplayName(name);
       await _fs.createUser(AppUser(
         uid: uid,
         name: name.trim(),
         username: loginId.trim(),
-        email: _idToEmail(loginId),
+        email: email,
         loginNames: loginKeys(loginId, phone),
         phone: phone.trim(),
         role: role,

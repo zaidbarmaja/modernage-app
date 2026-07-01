@@ -1,6 +1,7 @@
 import 'package:flutter/material.dart';
 import 'package:provider/provider.dart';
 
+import '../core/app_login.dart';
 import '../core/theme.dart';
 import '../models/app_user.dart';
 import '../services/auth_controller.dart';
@@ -23,51 +24,81 @@ class LogoutAction extends StatelessWidget {
         onPressed: () => context.read<AuthController>().stopImpersonating(),
       );
     }
+    // لا يوجد تغيير لكلمة المرور أو اسم المستخدم من التطبيق — يتحكّم بهما المالك
+    // فقط من الكود (lib/core/app_login.dart). قائمة الحساب: خروج + حذف الحساب
+    // (حذف الحساب إلزامي لمتاجر Google/Apple؛ لا يظهر لمدير الكود).
+    final isCodeAdmin = auth.appUser?.email == AppLogin.authEmail;
     return PopupMenuButton<String>(
       tooltip: 'الحساب',
-      icon: const Icon(Icons.account_circle_outlined, color: AppColors.cream),
       color: AppColors.surfaceAlt,
+      icon: const Icon(Icons.account_circle_outlined, color: AppColors.cream),
       onSelected: (v) {
-        if (v == 'profile') {
-          final u = context.read<AuthController>().appUser;
-          if (u != null) {
-            showDialog<void>(
-                context: context, builder: (_) => EditProfileDialog(user: u));
-          }
-        } else if (v == 'password') {
-          showDialog<void>(
-              context: context, builder: (_) => const ChangePasswordDialog());
-        } else if (v == 'logout') {
+        if (v == 'logout') {
           _confirmLogout(context);
+        } else if (v == 'delete') {
+          _confirmDeleteAccount(context);
         }
       },
-      itemBuilder: (_) => const [
-        PopupMenuItem(
-          value: 'profile',
-          child: Row(children: [
-            Icon(Icons.badge_outlined, size: 20, color: AppColors.cream),
-            SizedBox(width: 10),
-            Text('تعديل معلوماتي', style: TextStyle(color: AppColors.cream)),
-          ]),
-        ),
-        PopupMenuItem(
-          value: 'password',
-          child: Row(children: [
-            Icon(Icons.lock_outline, size: 20, color: AppColors.cream),
-            SizedBox(width: 10),
-            Text('تغيير كلمة المرور', style: TextStyle(color: AppColors.cream)),
-          ]),
-        ),
-        PopupMenuItem(
+      itemBuilder: (_) => [
+        const PopupMenuItem(
           value: 'logout',
           child: Row(children: [
-            Icon(Icons.logout, size: 20, color: AppColors.danger),
+            Icon(Icons.logout, color: AppColors.cream, size: 20),
             SizedBox(width: 10),
-            Text('تسجيل الخروج', style: TextStyle(color: AppColors.danger)),
+            Text('تسجيل الخروج', style: TextStyle(color: AppColors.cream)),
           ]),
         ),
+        if (!isCodeAdmin)
+          const PopupMenuItem(
+            value: 'delete',
+            child: Row(children: [
+              Icon(Icons.delete_forever, color: AppColors.danger, size: 20),
+              SizedBox(width: 10),
+              Text('حذف حسابي', style: TextStyle(color: AppColors.danger)),
+            ]),
+          ),
       ],
     );
+  }
+
+  /// حذف الحساب ذاتياً (إلزامي لمتاجر التطبيقات): يحذف هوية الحساب وبيانات
+  /// دخوله نهائياً من قاعدة البيانات ثم يخرج. تبقى السجلات التشغيلية/المالية
+  /// كسجلّات أعمال (موضّحة في سياسة الخصوصية).
+  Future<void> _confirmDeleteAccount(BuildContext context) async {
+    final auth = context.read<AuthController>();
+    final uid = auth.appUser?.uid;
+    if (uid == null) return;
+    final ok = await showDialog<bool>(
+      context: context,
+      builder: (ctx) => AlertDialog(
+        backgroundColor: AppColors.surface,
+        title: const Text('حذف حسابي',
+            style: TextStyle(color: AppColors.cream)),
+        content: const Text(
+          'سيُحذف حسابك وبيانات دخولك نهائياً من قاعدة البيانات، ولن تتمكّن من '
+          'الدخول أو استرجاع الحساب. هل أنت متأكد؟',
+          style: TextStyle(color: AppColors.creamDim, height: 1.6),
+        ),
+        actions: [
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, false),
+              child: const Text('إلغاء',
+                  style: TextStyle(color: AppColors.creamDim))),
+          TextButton(
+              onPressed: () => Navigator.pop(ctx, true),
+              child: const Text('حذف نهائي',
+                  style: TextStyle(color: AppColors.danger))),
+        ],
+      ),
+    );
+    if (ok != true) return;
+    try {
+      await FirestoreService().deleteUserPermanently(uid);
+    } catch (_) {
+      // حتى لو تعذّر الحذف نُكمل الخروج كي لا تبقى جلسة لحساب يُراد حذفه.
+    }
+    if (!context.mounted) return;
+    await context.read<AuthController>().signOut();
   }
 
   Future<void> _confirmLogout(BuildContext context) async {

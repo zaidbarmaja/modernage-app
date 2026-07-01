@@ -30,18 +30,20 @@ class _AccountingHomeState extends State<AccountingHome> {
 
   @override
   Widget build(BuildContext context) {
-    final tabs = [
-      const _DesignAccountingTab(),
-      _ExecutionAccountingTab(viewer: widget.user),
-      _EmployeesTab(viewer: widget.user),
-      _CustomersTab(viewer: widget.user),
-    ];
+    // بناء كسول: يُبنى التبويب النشط فقط (لا تبقى مستمعات Firestore لكل التبويبات
+    // نشطة معًا) — يقلّل قراءات قاعدة البيانات وتكلفتها.
+    final body = switch (_index) {
+      0 => const _DesignAccountingTab(),
+      1 => _ExecutionAccountingTab(viewer: widget.user),
+      2 => _EmployeesTab(viewer: widget.user),
+      _ => _CustomersTab(viewer: widget.user),
+    };
     return Scaffold(
       appBar: AppBar(
         title: Text('المحاسبة • ${_titles[_index]}'),
         actions: const [LogoutAction()],
       ),
-      body: IndexedStack(index: _index, children: tabs),
+      body: body,
       bottomNavigationBar: NavigationBar(
         selectedIndex: _index,
         onDestinationSelected: (i) => setState(() => _index = i),

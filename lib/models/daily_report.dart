@@ -33,19 +33,31 @@ class DailyReport {
   static String dayKeyOf(DateTime d) =>
       '${d.year}-${d.month.toString().padLeft(2, '0')}-${d.day.toString().padLeft(2, '0')}';
 
+  /// يحوّل قيمة التاريخ سواء كانت Timestamp أو نصًا ISO (للتقارير القديمة).
+  static DateTime? _parseDate(dynamic v) {
+    if (v is Timestamp) return v.toDate();
+    if (v is DateTime) return v;
+    if (v is String) return DateTime.tryParse(v);
+    return null;
+  }
+
   factory DailyReport.fromDoc(DocumentSnapshot<Map<String, dynamic>> doc) {
     final m = doc.data() ?? const {};
+    // أسماء حقول بديلة للتقارير المكتوبة من النظام القديم (employeeId/text…).
     return DailyReport(
       id: doc.id,
-      uid: (m['uid'] ?? '') as String,
-      userName: (m['userName'] ?? '') as String,
-      date: (m['date'] as Timestamp?)?.toDate() ?? DateTime.now(),
-      content: (m['content'] ?? '') as String,
+      uid: (m['uid'] ?? m['employeeId'] ?? '') as String,
+      userName: (m['userName'] ?? m['employeeName'] ?? '') as String,
+      date: _parseDate(m['date']) ??
+          (m['createdAt'] as Timestamp?)?.toDate() ??
+          DateTime.now(),
+      content: (m['content'] ?? m['text'] ?? '') as String,
       projectId: m['projectId'] as String?,
       projectName: (m['projectName'] ?? '') as String,
       customerUid: m['customerUid'] as String?,
       createdAt: (m['createdAt'] as Timestamp?)?.toDate(),
-      dayKey: m['dayKey'] as String?, // المخزّن أولاً، وإلا يُحسب من التاريخ
+      dayKey: (m['dayKey'] ?? (m['date'] is String ? m['date'] : null))
+          as String?,
     );
   }
 

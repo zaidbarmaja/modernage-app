@@ -6,6 +6,7 @@ import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/design_project.dart';
 import '../../services/firestore_service.dart';
+import '../../widgets/account_customer_picker.dart';
 import '../../widgets/ui.dart';
 import '../../widgets/user_dropdown.dart';
 
@@ -143,6 +144,12 @@ class _DesignProjectFormState extends State<DesignProjectForm> {
                   ),
                   const SizedBox(height: 16),
                 ],
+                AccountCustomerPicker(
+                  selectedName:
+                      _owner.text.trim().isEmpty ? null : _owner.text.trim(),
+                  onSelected: (name) => setState(() => _owner.text = name),
+                ),
+                const SizedBox(height: 16),
                 TextFormField(
                   controller: _owner,
                   decoration: const InputDecoration(
@@ -207,14 +214,6 @@ class _DesignProjectFormState extends State<DesignProjectForm> {
                       .map((s) => DropdownMenuItem(value: s, child: Text(s)))
                       .toList(),
                   onChanged: (v) => setState(() => _status = v ?? _status),
-                ),
-                const SizedBox(height: 16),
-                UserDropdown(
-                  role: UserRole.customer,
-                  selectedUid: _customerUid,
-                  label: 'ربط بحساب الزبون (اختياري)',
-                  icon: Icons.link,
-                  onChanged: (u) => setState(() => _customerUid = u?.uid),
                 ),
                 const SizedBox(height: 30),
                 ElevatedButton.icon(

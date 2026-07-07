@@ -1,7 +1,6 @@
 // ===============================================================
-//  صفحة: الإشعارات — بثّ فوري للجميع + تنبيهات يومية مجدولة + سجل الإشعارات
-//  النماذج التفاعلية (البثّ + إضافة تنبيه) لا تُعاد بناؤها مع تحديثات القاعدة،
-//  فلا يُمحى ما يكتبه المستخدم.
+//  صفحة: الإشعارات — بثّ فوري موجّه لفئة + تنبيهات يومية مجدولة موجّهة + السجل
+//  التوجيه: الجميع / تنفيذ / تصميم / مسابح / زبائن.
 // ===============================================================
 
 import { store, onStore, usersById } from "../store.js";
@@ -12,7 +11,7 @@ import {
 import { card, emptyState, badge } from "../ui.js";
 import {
   fmtDateTime, toast, escapeHtml, minToHHMM, hhmmToMin,
-  openModal, confirmDialog,
+  openModal, confirmDialog, AUDIENCES, audienceLabel,
 } from "../utils.js";
 
 function typeBadge(t) {
@@ -22,6 +21,12 @@ function typeBadge(t) {
   };
   const [lab, cls] = map[t] || [t || "إشعار", "b-gray"];
   return badge(lab, cls);
+}
+
+/** خيارات <select> للفئة المستهدفة. */
+function audienceOptions(selected = "all") {
+  return AUDIENCES.map(([v, l]) =>
+    `<option value="${v}"${v === selected ? " selected" : ""}>${escapeHtml(l)}</option>`).join("");
 }
 
 /* --------------------- التنبيهات اليومية المجدولة --------------------- */
@@ -34,6 +39,10 @@ function reminderForm(existing) {
     <div class="field">
       <label>وقت التنبيه</label>
       <input type="time" id="r-time" value="${minToHHMM(existing?.minute ?? 600)}">
+    </div>
+    <div class="field">
+      <label>الفئة المستهدفة</label>
+      <select id="r-aud">${audienceOptions(existing?.audience || "all")}</select>
     </div>
     <div class="field">
       <label>العنوان</label>
@@ -51,13 +60,14 @@ function reminderForm(existing) {
       {
         label: "حفظ", class: "btn--primary", onClick: async (c) => {
           const minute = hhmmToMin(box.querySelector("#r-time").value);
+          const audience = box.querySelector("#r-aud").value;
           const title = box.querySelector("#r-title").value.trim();
           const body = box.querySelector("#r-body").value.trim();
           if (minute == null) return toast("اختر وقت التنبيه", "error");
           if (!title && !body) return toast("اكتب عنواناً أو نصاً", "error");
           try {
-            if (isEdit) await updateReminder(existing.id, { minute, title, body });
-            else await addReminder({ minute, title, body, enabled: true });
+            if (isEdit) await updateReminder(existing.id, { minute, title, body, audience });
+            else await addReminder({ minute, title, body, audience, enabled: true });
             toast("تم الحفظ", "success");
             c();
           } catch (e) {
@@ -69,12 +79,29 @@ function reminderForm(existing) {
   });
 }
 
+/** إضافة تذكيرَي الدخول/الخروج الافتراضيين (بأوقات دوام الشركة) ليصبحا قابلين للتعديل. */
+async function seedDefaults() {
+  const s = store.data.settings || {};
+  const start = s.workStartMin ?? 8 * 60;
+  const end = s.workEndMin ?? 16 * 60;
+  try {
+    await addReminder({ minute: start, audience: "all", enabled: true,
+      title: "تذكير بتسجيل الدخول", body: "حان وقت الدوام — لا تنسَ تسجيل حضورك بالبصمة." });
+    await addReminder({ minute: end, audience: "all", enabled: true,
+      title: "تذكير بتسجيل الخروج", body: "انتهى الدوام — لا تنسَ تسجيل انصرافك بالبصمة." });
+    toast("أُضيفت التذكيرات الافتراضية — يمكنك تعديلها الآن", "success");
+  } catch (e) {
+    toast("تعذّر الإضافة: " + (e.message || e), "error");
+  }
+}
+
 function drawReminders(container) {
   const rems = store.data.scheduledReminders || [];
   const rows = rems.map((r) => {
     const off = r.enabled === false;
     return `<tr>
       <td class="num">${minToHHMM(r.minute ?? 0)}</td>
+      <td>${badge(audienceLabel(r.audience || "all"), "b-olive")}</td>
       <td><b>${escapeHtml(r.title || "—")}</b><br><span class="muted">${escapeHtml(r.body || "")}</span></td>
       <td>${off ? badge("معطّل", "b-gray") : badge("مُفعّل", "b-green")}</td>
       <td class="row-actions">
@@ -87,21 +114,24 @@ function drawReminders(container) {
 
   const table = rems.length ? `
     <div class="table-wrap"><table class="data">
-      <thead><tr><th>الوقت</th><th>التنبيه</th><th>الحالة</th><th></th></tr></thead>
+      <thead><tr><th>الوقت</th><th>الفئة</th><th>التنبيه</th><th>الحالة</th><th></th></tr></thead>
       <tbody>${rows}</tbody>
     </table></div>`
-    : emptyState("لا توجد تنبيهات مجدولة. أضِف تنبيهاً ليصل الموظفين يومياً في وقته.", "⏰");
+    : emptyState("لا توجد تنبيهات مجدولة بعد. أضِف تنبيهاً، أو استخدم التذكيرات الافتراضية.", "⏰");
 
   const wrap = container.querySelector("#rem-list");
   if (!wrap) return;
   wrap.innerHTML = card("التنبيهات اليومية المجدولة", "⏰", `
-    <p class="hint">📌 تصل الموظفين تلقائياً كل يوم في وقتها (تذكير بالدخول/الخروج…) حتى والتطبيق مغلق. تُطبَّق التغييرات على جهاز الموظف عند فتحه للتطبيق. إن لم تُضِف أيّاً، يرسل التطبيق افتراضياً تذكيراً بالدخول عند بداية الدوام وبالخروج عند نهايته.</p>
-    <div class="modal__actions" style="margin-bottom:12px">
+    <p class="hint">📌 تصل الفئة المستهدفة تلقائياً كل يوم في وقتها (حتى والتطبيق مغلق). تُطبَّق التغييرات على جهاز المستخدم عند فتحه للتطبيق.</p>
+    <div class="modal__actions" style="margin-bottom:12px;gap:8px">
       <button class="btn btn--primary btn--sm" id="rem-add">➕ إضافة تنبيه</button>
+      ${rems.length ? "" : `<button class="btn btn--ghost btn--sm" id="rem-seed">استخدام التذكيرات الافتراضية (دخول/خروج)</button>`}
     </div>
     ${table}`);
 
   wrap.querySelector("#rem-add").onclick = () => reminderForm(null);
+  const seedBtn = wrap.querySelector("#rem-seed");
+  if (seedBtn) seedBtn.onclick = () => seedDefaults();
   wrap.querySelectorAll("[data-edit]").forEach((b) =>
     b.onclick = () => {
       const r = (store.data.scheduledReminders || []).find((x) => x.id === b.dataset.edit);
@@ -120,25 +150,27 @@ function drawReminders(container) {
 /* ----------------------------- الصفحة ----------------------------- */
 
 function render(container, { user } = {}) {
-  // الهيكل الثابت: نموذج البثّ + حاوية التنبيهات المجدولة + حاوية سجل الإشعارات.
   container.innerHTML = `
-    ${card("بثّ إشعار فوري للجميع", "📣", `
+    ${card("بثّ إشعار فوري", "📣", `
+      <div class="field">
+        <label>الفئة المستهدفة</label>
+        <select id="n-aud">${audienceOptions("all")}</select>
+      </div>
       <div class="field">
         <label>العنوان</label>
         <input id="n-title" placeholder="عنوان الإشعار" maxlength="80" autocomplete="off">
       </div>
       <div class="field">
         <label>النص</label>
-        <textarea id="n-body" placeholder="نص الإشعار الذي سيصل لكل المستخدمين"></textarea>
+        <textarea id="n-body" placeholder="نص الإشعار"></textarea>
       </div>
-      <p class="hint">📌 يصل الإشعار إلى كل مستخدمي التطبيق، ويظهر لكلٍّ منهم داخل التطبيق في جرس الإشعارات 🔔 عند فتحه.</p>
+      <p class="hint">📌 يصل الإشعار فوراً كإشعار على هاتف الفئة المستهدفة (حتى والتطبيق مغلق) ويظهر في جرس الإشعارات 🔔.</p>
       <div class="modal__actions" style="margin-top:6px">
-        <button class="btn btn--primary" id="n-send">📤 إرسال للجميع</button>
+        <button class="btn btn--primary" id="n-send">📤 إرسال</button>
       </div>`)}
     <div id="rem-list"></div>
     <div id="notif-list"></div>`;
 
-  // تحديث سجل الإشعارات فقط (لا يمسّ النماذج).
   const drawList = () => {
     const notifs = store.data.notifications;
     const uMap = usersById();
@@ -168,10 +200,10 @@ function render(container, { user } = {}) {
       b.addEventListener("click", () => markNotificationRead(b.dataset.read).catch(() => {})));
   };
 
-  // ربط زر الإرسال الفوري مرّة واحدة.
   container.querySelector("#n-send").onclick = async (e) => {
     const titleEl = container.querySelector("#n-title");
     const bodyEl = container.querySelector("#n-body");
+    const audience = container.querySelector("#n-aud").value;
     const title = titleEl.value.trim();
     const body = bodyEl.value.trim();
     if (!title && !body) return toast("اكتب عنواناً أو نصاً", "error");
@@ -179,9 +211,10 @@ function render(container, { user } = {}) {
     btn.disabled = true; btn.classList.add("is-loading");
     try {
       const n = await broadcastNotification({
-        title, body, fromUid: user?.uid || "", fromName: user?.name || "مدير النظام",
+        title, body, audience,
+        fromUid: user?.uid || "", fromName: user?.name || "مدير النظام",
       });
-      toast(`أُرسل الإشعار إلى ${n} مستخدماً`, "success");
+      toast(`أُرسل الإشعار إلى ${n} مستخدماً (${audienceLabel(audience)})`, "success");
       titleEl.value = "";
       bodyEl.value = "";
     } catch (ex) {
@@ -198,7 +231,7 @@ function render(container, { user } = {}) {
 
 export default {
   title: "الإشعارات",
-  sub: "البثّ الفوري والتنبيهات اليومية المجدولة",
-  needs: ["notifications", "users", "scheduledReminders"],
+  sub: "بثّ موجّه وتنبيهات يومية مجدولة حسب الفئة",
+  needs: ["notifications", "users", "scheduledReminders", "settings"],
   render,
 };

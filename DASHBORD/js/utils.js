@@ -127,6 +127,39 @@ export const OFFER_TYPES = [
 
 export const PROJECT_STATUSES = ["قيد العمل", "منجز", "معلّق"];
 
+/* -------- الفئات المستهدفة للإشعارات/التنبيهات (توجيه حسب الفئة) -------- */
+
+export const AUDIENCES = [
+  ["all", "الجميع"],
+  ["execution", "موظفو التنفيذ"],
+  ["design", "موظفو التصميم"],
+  ["pools", "موظفو المسابح"],
+  ["customers", "الزبائن"],
+];
+
+export const audienceLabel = (a) =>
+  (AUDIENCES.find((x) => x[0] === a) || ["", "الجميع"])[1];
+
+/** هل يطابق المستخدم [u] الفئة المستهدفة [audience]؟ (مطابق لـ ScheduledReminder.matchesUser في التطبيق) */
+export function audienceMatches(audience, u) {
+  if (!audience || audience === "all") return true;
+  const role = u.role;
+  const cat = u.workCategory;
+  switch (audience) {
+    case "execution":
+      return role === "executionEmployee";
+    case "design":
+      return role === "designEmployee";
+    case "pools":
+      return role === "executionEmployee" &&
+        (cat === "poolsSupervision" || cat === "poolsExecution");
+    case "customers":
+      return role === "customer";
+    default:
+      return true;
+  }
+}
+
 /* ----------------------- مساعدات DOM/HTML ----------------------- */
 
 export function escapeHtml(str) {

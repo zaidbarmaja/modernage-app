@@ -10,7 +10,7 @@ import {
   onSnapshot, query, where, serverTimestamp, writeBatch, Timestamp,
   getAuth, createUserWithEmailAndPassword, updateProfile, signOut,
 } from "./firebase.js";
-import { loginKeys, idToEmail, makeCredential, newSalt } from "./utils.js";
+import { loginKeys, idToEmail, makeCredential, newSalt, audienceMatches } from "./utils.js";
 
 /** أسماء المجموعات — مطابقة لـ FsCollections في التطبيق. */
 export const COL = {
@@ -216,11 +216,13 @@ export const createCustomerAccount = ({ name, phone, accessCode, contact = "" })
 
 /* --------------------------- الإشعارات --------------------------- */
 
-/** بثّ إشعار لكل المستخدمين (إشعار موجّه لكل uid). يُرجع العدد. */
-export async function broadcastNotification({ title, body, fromUid, fromName }) {
+/** بثّ إشعار للفئة المستهدفة [audience] (إشعار موجّه لكل uid مطابق). يُرجع العدد. */
+export async function broadcastNotification({ title, body, fromUid, fromName, audience = "all" }) {
   const usersSnap = await getDocs(collection(db, COL.users));
   const batch = writeBatch(db);
+  let count = 0;
   usersSnap.forEach((u) => {
+    if (!audienceMatches(audience, u.data() || {})) return; // توجيه حسب الفئة
     const ref = doc(collection(db, COL.notifications));
     batch.set(ref, {
       type: "broadcast", title, body,
@@ -229,9 +231,10 @@ export async function broadcastNotification({ title, body, fromUid, fromName }) 
       relatedId: "", lat: null, lng: null, read: false,
       createdAt: serverTimestamp(),
     });
+    count++;
   });
   await batch.commit();
-  return usersSnap.size;
+  return count;
 }
 
 export const markNotificationRead = (id) => updateAt(COL.notifications, id, { read: true });
@@ -240,8 +243,8 @@ export const markNotificationRead = (id) => updateAt(COL.notifications, id, { re
 //  يقرأها التطبيق ويجدول إشعاراً محلياً على جهاز الموظف في وقت كل تنبيه.
 //  minute = دقائق من منتصف الليل (10:00 صباحاً = 600).
 
-export const addReminder = ({ title, body, minute, enabled = true }) =>
-  addTo(COL.scheduledReminders, { title, body, minute, enabled });
+export const addReminder = ({ title, body, minute, enabled = true, audience = "all" }) =>
+  addTo(COL.scheduledReminders, { title, body, minute, enabled, audience });
 
 export const updateReminder = (id, data) =>
   updateAt(COL.scheduledReminders, id, data);

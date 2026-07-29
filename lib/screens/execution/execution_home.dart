@@ -5,6 +5,7 @@ import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/work_site.dart';
 import '../../services/firestore_service.dart';
+import '../../services/notifications.dart';
 import '../../widgets/app_actions.dart';
 import '../../widgets/notifications_view.dart';
 import '../../widgets/site_card.dart';
@@ -41,8 +42,7 @@ class _ExecutionHomeState extends State<ExecutionHome> {
                 builder: (_) => Scaffold(
                   appBar: AppBar(title: const Text('الإشعارات')),
                   body: NotificationsView(
-                      stream: FirestoreService()
-                          .notificationsForUser(widget.user.uid)),
+                      stream: Notifications.streamFor(widget.user.uid)),
                 ),
               ),
             ),

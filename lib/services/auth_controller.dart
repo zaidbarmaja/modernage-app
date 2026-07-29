@@ -9,6 +9,7 @@ import '../core/constants.dart';
 import '../models/app_user.dart';
 import 'auth_service.dart';
 import 'firestore_service.dart';
+import 'notifications.dart';
 
 /// حالة الجلسة:
 /// - unknown: قيد التحديد/التحميل (شاشة البداية).
@@ -301,6 +302,8 @@ class AuthController extends ChangeNotifier {
   Future<void> signOut() async {
     _realUser = null;
     impersonatedUser = null;
+    // ألغِ تذكيرات المستخدم المحلية كي لا تبقى تظهر على الجهاز بعد خروجه.
+    await Notifications.cancelAll();
     // امسح الجلسات المحلية المحفوظة (تطوير/كلمة مرور Firestore) كي لا تُستعاد.
     try {
       final p = await SharedPreferences.getInstance();

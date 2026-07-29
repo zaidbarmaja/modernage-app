@@ -7,6 +7,7 @@ import '../../models/app_user.dart';
 import '../../models/daily_report.dart';
 import '../../services/firebase_service.dart';
 import '../../services/firestore_service.dart';
+import '../../services/notifications.dart';
 import '../../widgets/app_actions.dart';
 import '../../widgets/notifications_view.dart';
 import '../../widgets/ui.dart';
@@ -35,14 +36,13 @@ class _CustomerHomeState extends State<CustomerHome> {
   @override
   Widget build(BuildContext context) {
     final u = widget.user;
-    final fs = FirestoreService();
     // بناء كسول: يُبنى التبويب النشط فقط (لا تبقى مستمعات Firestore للمخفية).
     final Widget body = switch (_index) {
       0 => CustomerOverview(
           customerUid: u.uid, customerName: u.name, viewer: u),
       1 => _CustomerAccountsTab(customerName: u.name),
       2 => _CustomerReportsTab(customerUid: u.uid),
-      _ => NotificationsView(stream: fs.notificationsForUser(u.uid)),
+      _ => NotificationsView(stream: Notifications.streamFor(u.uid)),
     };
     return Scaffold(
       appBar: AppBar(

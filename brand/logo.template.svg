@@ -1,0 +1,51 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 400 520" width="400" height="520" role="img" aria-label="عصر الحداثة">
+  <title>عصر الحداثة</title>
+  <!--
+    الشعار الكامل المرتّب: الرمز أعلى، والاسم أسفله على سطر واحد، بمحور
+    وسطي واحد ومسافات منتظمة.
+
+    لا تُعدّل brand/logo.svg ولا brand/logo_on_dark.svg مباشرة — كلاهما
+    مُولَّد من هنا. عدّل هذا القالب ثم أعد التوليد بالأمر:
+        dart run tool/make_brand.dart
+
+    __INK__ يُستبدَل عند التوليد: زيتوني داكن للخلفيات الفاتحة، وكريمي
+    فاتح للخلفية الداكنة (خلفية التطبيق #161911).
+  -->
+  <defs>
+    <linearGradient id="oliveFace" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0%"   stop-color="#A8BA82"/>
+      <stop offset="55%"  stop-color="#7C8A57"/>
+      <stop offset="100%" stop-color="#515E39"/>
+    </linearGradient>
+    <style>
+      @font-face {
+        font-family: 'TajawalBrand';
+        src: url(data:font/ttf;base64,__FONT_B64__) format('truetype');
+        font-weight: 700;
+      }
+      .wordmark {
+        font-family: 'TajawalBrand', 'Tajawal', 'Segoe UI', sans-serif;
+        font-weight: 700;
+        font-size: 64px;
+        fill: __INK__;
+      }
+    </style>
+  </defs>
+
+  <!-- الرمز: صرح معماري طويل بمنظور واحد + إطار مُزاح خلفه يعطي العمق -->
+  <g>
+    <!-- الإطار الخلفي (يظهر جزؤه غير المحجوب فقط) -->
+    <path d="M 145 96 L 289 61 L 289 372 L 145 337 Z"
+          fill="none" stroke="__INK__" stroke-width="12" stroke-linejoin="round"/>
+
+    <!-- الواجهة الأمامية مع فتحة المدخل (fill-rule=evenodd يقصّ الفتحة
+         فعلياً، فيبقى الشعار سليماً على أي خلفية) -->
+    <path fill-rule="evenodd" fill="url(#oliveFace)"
+          d="M 111 62 L 255 27 L 255 338 L 111 303 Z
+             M 151 190 L 215 174 L 215 328 L 151 313 Z"/>
+  </g>
+
+  <!-- الاسم -->
+  <text class="wordmark" x="200" y="462" text-anchor="middle"
+        direction="rtl" xml:lang="ar">عصر الحداثة</text>
+</svg>

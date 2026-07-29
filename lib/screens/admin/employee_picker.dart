@@ -48,7 +48,8 @@ class EmployeePickerScreen extends StatelessWidget {
             );
           }
           return ListView(
-            padding: const EdgeInsets.all(16),
+            // هامش سفلي يترك مساحة للزر العائم كي لا يغطّي آخر موظف في القائمة.
+            padding: const EdgeInsets.fromLTRB(16, 16, 16, 90),
             children: [
               const Padding(
                 padding: EdgeInsets.only(bottom: 8, right: 4),

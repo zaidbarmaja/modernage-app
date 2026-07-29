@@ -10,8 +10,7 @@ import 'firebase_options.dart';
 import 'core/theme.dart';
 import 'services/auth_controller.dart';
 import 'services/connectivity_service.dart';
-import 'services/push_service.dart';
-import 'services/reminder_service.dart';
+import 'services/notifications.dart';
 import 'services/session.dart';
 import 'widgets/common.dart';
 import 'screens/auth/auth_gate.dart';
@@ -39,7 +38,7 @@ Future<void> main() async {
   }
   // معالج إشعارات الخلفية (FCM) — يجب تسجيله على مستوى أعلى قبل تشغيل التطبيق.
   try {
-    FirebaseMessaging.onBackgroundMessage(firebaseMessagingBackgroundHandler);
+    FirebaseMessaging.onBackgroundMessage(notificationBackgroundHandler);
   } catch (e) {
     debugPrint('FCM background handler error: $e');
   }
@@ -55,7 +54,7 @@ Future<void> main() async {
     debugPrint('Firestore settings error: $e');
   }
   // تهيئة خدمة التذكيرات المحلية (تُتجاهَل على الويب).
-  await ReminderService.instance.init();
+  await Notifications.init();
   runApp(const AsrApp());
 }
 
@@ -82,9 +81,14 @@ class AsrApp extends StatelessWidget {
           GlobalWidgetsLocalizations.delegate,
           GlobalCupertinoLocalizations.delegate,
         ],
-        builder: (context, child) => Directionality(
-          textDirection: TextDirection.rtl,
-          child: child!,
+        builder: (context, child) => MediaQuery.withClampedTextScaling(
+          // نحدّ تكبير الخط كي لا تُقصّ نصوص الأزرار ذات الارتفاع الثابت عند
+          // اختيار المستخدم خطًّا كبيرًا جدًّا في إعدادات النظام.
+          maxScaleFactor: 1.3,
+          child: Directionality(
+            textDirection: TextDirection.rtl,
+            child: child!,
+          ),
         ),
         // المهمة #1: بوابة الاتصال تحجب التطبيق كلياً عند غياب الإنترنت.
         home: const ConnectivityGate(child: AuthGate()),

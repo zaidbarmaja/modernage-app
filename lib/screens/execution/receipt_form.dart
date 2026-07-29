@@ -4,12 +4,12 @@ import 'package:image_picker/image_picker.dart';
 
 import '../../core/format.dart';
 import '../../core/theme.dart';
-import '../../models/app_notification.dart';
 import '../../models/app_user.dart';
 import '../../models/receipt.dart';
 import '../../models/work_site.dart';
 import '../../services/firebase_service.dart';
 import '../../services/firestore_service.dart';
+import '../../services/notifications.dart';
 import '../../services/storage_service.dart';
 import '../../widgets/account_customer_picker.dart';
 import '../../widgets/ui.dart';
@@ -124,23 +124,16 @@ class _ReceiptFormState extends State<ReceiptForm> {
         createdByName: widget.executor.name,
         date: _date,
       ));
-      final customerUid = site?.customerUid ?? '';
-      if (customerUid.isNotEmpty) {
-        await _fs.addNotification(AppNotification(
-          id: '',
-          type: 'receipt',
-          title: _isExpense
-              ? 'وصل صرف: ${Fmt.money(amount)}'
-              : 'وصل قبض: ${Fmt.money(amount)}',
-          body:
-              '${widget.executor.name} ${_isExpense ? 'سجّل صرفاً' : 'أصدر وصل قبض'} '
-              'بقيمة ${Fmt.money(amount)} لموقع $ownerName',
-          fromUid: widget.executor.uid,
-          fromName: widget.executor.name,
-          toUid: customerUid,
-          relatedId: site?.id,
-        ));
-      }
+      // نصّ الإشعار ومستلِمه محدّدان في services/notifications.dart.
+      await Notifications.newReceipt(
+        customerUid: site?.customerUid ?? '',
+        siteOwnerName: ownerName,
+        executorUid: widget.executor.uid,
+        executorName: widget.executor.name,
+        amountText: Fmt.money(amount),
+        expense: _isExpense,
+        siteId: site?.id,
+      );
       // مرآة في الحسابات المشتركة (لا نُفشل الوصل إن تعذّر).
       try {
         await Db.addElectronicPayment(

@@ -1,10 +1,11 @@
 import 'package:flutter/services.dart' show PlatformException;
+import 'package:local_auth/error_codes.dart' as auth_error;
 import 'package:local_auth/local_auth.dart';
 
 /// نتيجة التحقّق بالبصمة:
 /// • success: تحقّق الموظف ببصمته بنجاح.
-/// • failed: فشل التحقّق أو ألغاه المستخدم (يُمنع تسجيل الحضور).
-/// • unavailable: لا بصمة على الجهاز (لا نمنع كي لا يُحبَس موظف بلا بصمة مُسجّلة).
+/// • failed: فشل التحقّق أو ألغاه المستخدم أو أُقفلت البصمة (يُمنع تسجيل الحضور).
+/// • unavailable: لا بصمة على الجهاز أصلاً (لا نمنع كي لا يُحبَس موظف بلا بصمة).
 enum BioResult { success, failed, unavailable }
 
 /// خدمة المصادقة بالبصمة/Face ID — للتحقّق من هوية الموظف قبل تسجيل الحضور أو
@@ -31,11 +32,19 @@ class BiometricService {
         ),
       );
       return ok ? BioResult.success : BioResult.failed;
-    } on PlatformException catch (_) {
-      // خطأ نظام (لا جهاز/غير مُسجّل/مقفل) → لا نمنع التسجيل.
-      return BioResult.unavailable;
+    } on PlatformException catch (e) {
+      // لا بصمة مُسجّلة / غير متاحة على الجهاز → لا نمنع.
+      if (e.code == auth_error.notEnrolled ||
+          e.code == auth_error.notAvailable ||
+          e.code == auth_error.passcodeNotSet ||
+          e.code == auth_error.otherOperatingSystem) {
+        return BioResult.unavailable;
+      }
+      // القفل (محاولات خاطئة كثيرة) أو أي خطأ آخر → نمنع كي لا يُتجاوز التحقّق.
+      return BioResult.failed;
     } catch (_) {
-      return BioResult.unavailable;
+      // خطأ غير متوقّع → نمنع احتياطاً (لا نتجاوز البصمة).
+      return BioResult.failed;
     }
   }
 }

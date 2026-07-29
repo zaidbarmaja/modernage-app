@@ -3,7 +3,7 @@ import 'package:flutter/material.dart';
 import '../core/format.dart';
 import '../core/theme.dart';
 import '../models/app_notification.dart';
-import '../services/firestore_service.dart';
+import '../services/notifications.dart';
 import 'ui.dart';
 
 /// قائمة الإشعارات الداخلية (دخول المواقع/وصولات/تقارير).
@@ -27,9 +27,8 @@ class NotificationsView extends StatelessWidget {
 
   @override
   Widget build(BuildContext context) {
-    final fs = FirestoreService();
     return StreamBuilder<List<AppNotification>>(
-      stream: stream ?? fs.notificationsStream(),
+      stream: stream ?? Notifications.allStream(),
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingView();
@@ -72,7 +71,7 @@ class NotificationsView extends StatelessWidget {
                     ? null
                     : const Icon(Icons.fiber_new, color: AppColors.warning),
                 onTap: () {
-                  if (!n.read) fs.markNotificationRead(n.id);
+                  if (!n.read) Notifications.markRead(n.id);
                 },
               ),
             );

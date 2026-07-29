@@ -54,6 +54,11 @@ class AttendanceView extends StatefulWidget {
 class _AttendanceViewState extends State<AttendanceView> {
   final _fs = FirestoreService();
 
+  /// مجرى سجلات الحضور — يُنشأ مرّة واحدة كي لا تومض الشاشة بـ«جارٍ التحميل»
+  /// عند كل ضغطة أو تغيير فلتر (لو أُنشئ في build لأعاد الاشتراك في كل مرّة).
+  late final Stream<List<AttendanceRecord>> _attStream =
+      _fs.attendanceForUser(widget.user.uid);
+
   /// الشهر المختار لفلترة الملخّص والسجل (null = كل الأشهر). الافتراضي: هذا الشهر.
   DateTime? _month = DateTime(DateTime.now().year, DateTime.now().month);
 
@@ -65,21 +70,24 @@ class _AttendanceViewState extends State<AttendanceView> {
   @override
   Widget build(BuildContext context) {
     return StreamBuilder<List<AttendanceRecord>>(
-      stream: _fs.attendanceForUser(widget.user.uid),
+      stream: _attStream,
       builder: (context, snapshot) {
         if (snapshot.connectionState == ConnectionState.waiting) {
           return const LoadingView();
         }
         final records = snapshot.data ?? [];
-        // سجل اليوم (إن وُجد) — لتحديد حالة زر البصمة.
+        // سجل اليوم (للحالة المكتملة) + أي سجل مفتوح (لم يُسجَّل خروجه بعد) — حتى لو
+        // كان دخوله بالأمس (تسجيل خروج بعد منتصف الليل).
         final now = DateTime.now();
         AttendanceRecord? today;
+        AttendanceRecord? openRec;
         for (final r in records) {
-          if (r.checkIn.year == now.year &&
+          if (openRec == null && r.isOpen) openRec = r;
+          if (today == null &&
+              r.checkIn.year == now.year &&
               r.checkIn.month == now.month &&
               r.checkIn.day == now.day) {
             today = r;
-            break;
           }
         }
         // فلترة بالشهر المختار (تطبَّق على الملخّص والسجل).
@@ -99,7 +107,7 @@ class _AttendanceViewState extends State<AttendanceView> {
             _scheduleCard(),
             const SizedBox(height: 12),
             if (widget.interactive) ...[
-              _manualCard(today),
+              _manualCard(today, openRec),
               const SizedBox(height: 12),
             ],
             _monthFilterCard(months),
@@ -212,7 +220,7 @@ class _AttendanceViewState extends State<AttendanceView> {
 
   /// بطاقة البصمة اليدوية: زر «تسجيل الحضور»/«تسجيل الانصراف» يطلب الموقع لحظة
   /// الضغط فقط. عطلة الجمعة تُعطّل الزر.
-  Widget _manualCard(AttendanceRecord? today) {
+  Widget _manualCard(AttendanceRecord? today, AttendanceRecord? openRec) {
     Widget statusRow(IconData icon, Color color, String text) => Row(
           crossAxisAlignment: CrossAxisAlignment.start,
           children: [
@@ -226,25 +234,28 @@ class _AttendanceViewState extends State<AttendanceView> {
         );
 
     final children = <Widget>[];
+    final now = DateTime.now();
 
-    if (_isFriday) {
+    if (_isFriday && openRec == null) {
       children.add(statusRow(Icons.weekend, AppColors.warning,
           'اليوم عطلة (الجمعة) — لا حاجة لتسجيل الحضور.'));
-    } else if (today != null && !today.isOpen) {
-      children.add(statusRow(
-          Icons.verified,
-          AppColors.success,
-          'اكتمل دوام اليوم ✓\nدخول ${Fmt.time(today.checkIn)}  •  '
-          'خروج ${Fmt.time(today.checkOut)}'));
-    } else if (today != null && today.isOpen) {
+    } else if (openRec != null) {
+      // يوجد دوام مفتوح (اليوم أو من يوم سابق) — زر الانصراف.
+      final rec = openRec;
+      final sameDay = rec.checkIn.year == now.year &&
+          rec.checkIn.month == now.month &&
+          rec.checkIn.day == now.day;
+      final when = sameDay
+          ? 'الساعة ${Fmt.time(rec.checkIn)}'
+          : 'بتاريخ ${Fmt.date(rec.checkIn)} الساعة ${Fmt.time(rec.checkIn)}';
       children.add(statusRow(Icons.login, AppColors.oliveBright,
-          'سجّلت دخولك الساعة ${Fmt.time(today.checkIn)}. اضغط للانصراف عند مغادرتك.'));
+          'سجّلت دخولك $when. اضغط للانصراف عند مغادرتك.'));
       children.add(const SizedBox(height: 12));
       children.add(SizedBox(
         width: double.infinity,
         height: 50,
         child: ElevatedButton.icon(
-          onPressed: _busy ? null : _checkOut,
+          onPressed: _busy ? null : () => _checkOut(rec),
           style: ElevatedButton.styleFrom(backgroundColor: AppColors.danger),
           icon: _busy
               ? const _Spinner()
@@ -253,6 +264,12 @@ class _AttendanceViewState extends State<AttendanceView> {
               style: TextStyle(fontSize: 16, fontWeight: FontWeight.w700)),
         ),
       ));
+    } else if (today != null && !today.isOpen) {
+      children.add(statusRow(
+          Icons.verified,
+          AppColors.success,
+          'اكتمل دوام اليوم ✓\nدخول ${Fmt.time(today.checkIn)}  •  '
+          'خروج ${Fmt.time(today.checkOut)}'));
     } else {
       children.add(statusRow(
           Icons.my_location,
@@ -354,8 +371,10 @@ class _AttendanceViewState extends State<AttendanceView> {
     }
   }
 
-  /// يسجّل الانصراف مع موقعه (لا يُمنع خارج النطاق — قد يغادر الموظف الموقع).
-  Future<void> _checkOut() async {
+  /// يسجّل انصراف السجل المفتوح [rec]. لا يُمنع خارج النطاق (قد يغادر الموظف)،
+  /// ولا يُمنع إن تعذّر تحديد الموقع (يُسجَّل بلا إحداثيات)، ويُغلَق سجل يوم الدخول
+  /// نفسه (يعمل حتى لو تجاوز منتصف الليل).
+  Future<void> _checkOut(AttendanceRecord rec) async {
     if (_busy) return;
     setState(() => _busy = true);
     try {
@@ -370,14 +389,20 @@ class _AttendanceViewState extends State<AttendanceView> {
         return;
       }
 
-      final pos = await LocationService.currentPosition();
+      // نحاول تحديد الموقع، لكن لا نمنع الانصراف إن تعذّر (GPS مطفأ عند المغادرة).
+      double? lat, lng;
+      try {
+        final pos = await LocationService.currentPosition();
+        lat = pos.latitude;
+        lng = pos.longitude;
+      } catch (_) {}
+
       await _fs.checkOut(widget.user.uid,
+          recordDate: rec.checkIn,
           checkOutTime: DateTime.now(),
-          lat: pos.latitude,
-          lng: pos.longitude);
+          lat: lat,
+          lng: lng);
       if (mounted) showSnack(context, 'تم تسجيل انصرافك ✓');
-    } on LocationException catch (e) {
-      if (mounted) showSnack(context, e.message, error: true);
     } catch (_) {
       if (mounted) {
         showSnack(context, 'تعذّر تسجيل الانصراف. حاول مجددًا.', error: true);

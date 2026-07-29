@@ -300,6 +300,7 @@ class DesignProjectDetail extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true, // يمنع اقتصاص المحتوى مع الكيبورد على الشاشات الصغيرة
         backgroundColor: AppColors.surface,
         title:
             const Text('تعديل المهمة', style: TextStyle(color: AppColors.cream)),
@@ -355,6 +356,7 @@ class DesignProjectDetail extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true, // يمنع اقتصاص المحتوى مع الكيبورد على الشاشات الصغيرة
         backgroundColor: AppColors.surface,
         content: Text('حذف المهمة «${p.tasks[i].title}»؟',
             style: const TextStyle(color: AppColors.cream)),
@@ -382,6 +384,7 @@ class DesignProjectDetail extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true, // يمنع اقتصاص المحتوى مع الكيبورد على الشاشات الصغيرة
         backgroundColor: AppColors.surface,
         title:
             const Text('إضافة مهمة', style: TextStyle(color: AppColors.cream)),
@@ -496,6 +499,7 @@ class DesignProjectDetail extends StatelessWidget {
     final ok = await showDialog<bool>(
       context: context,
       builder: (ctx) => AlertDialog(
+        scrollable: true, // يمنع اقتصاص المحتوى مع الكيبورد على الشاشات الصغيرة
         backgroundColor: AppColors.surface,
         title: const Text('إضافة ملاحظة',
             style: TextStyle(color: AppColors.cream)),

@@ -4,9 +4,7 @@ import 'package:provider/provider.dart';
 import '../../core/constants.dart';
 import '../../models/app_user.dart';
 import '../../services/auth_controller.dart';
-import '../../services/firestore_service.dart';
-import '../../services/push_service.dart';
-import '../../services/reminder_service.dart';
+import '../../services/notifications.dart';
 import '../accounting/accounting_home.dart';
 import '../admin/admin_home.dart';
 import '../customer/customer_home.dart';
@@ -15,7 +13,7 @@ import '../execution/execution_home.dart';
 import '../location_gate.dart';
 
 /// يفتح الصفحة الرئيسية المناسبة لدور المستخدم، ويسجّل جهازه للإشعارات الفورية
-/// (FCM)، ويجدول تنبيهاته اليومية المحلية (حسب الفئة المستهدفة من الداشبورد).
+/// (FCM)، ويجدول تنبيهاته اليومية المحلية (حسب فئته) — عبر NotificationService.
 class RoleRouter extends StatefulWidget {
   final AppUser user;
   const RoleRouter({super.key, required this.user});
@@ -31,25 +29,10 @@ class _RoleRouterState extends State<RoleRouter> {
     // للمستخدم الحقيقي فقط (لا أثناء انتحال الأدمن لحساب موظف).
     try {
       if (!context.read<AuthController>().isImpersonating) {
-        PushService.instance.register(widget.user.uid);
-        _syncReminders(widget.user);
+        Notifications.registerDevice(widget.user.uid);
+        Notifications.syncDailyReminders(widget.user);
       }
     } catch (_) {}
-  }
-
-  /// يجدول التنبيهات اليومية المحلية لهذا المستخدم: **فقط** ما ضبطه المدير من
-  /// الداشبورد وطابق فئته. لا يُنشئ التطبيق أي تنبيه من تلقاء نفسه؛ فإن لم يضبط
-  /// المدير شيئاً لا يُجدوَل شيء.
-  Future<void> _syncReminders(AppUser user) async {
-    try {
-      final all = await FirestoreService()
-          .scheduledRemindersOnce()
-          .timeout(const Duration(seconds: 10));
-      final reminders = all.where((r) => r.matchesUser(user)).toList();
-      await ReminderService.instance.syncReminders(reminders);
-    } catch (_) {
-      // نتجاهل أي فشل (بلا إنترنت مثلاً) دون كسر الجلسة.
-    }
   }
 
   @override

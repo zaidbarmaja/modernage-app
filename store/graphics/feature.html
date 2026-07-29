@@ -1,0 +1,68 @@
+<!DOCTYPE html>
+<html lang="ar" dir="rtl">
+<head>
+<meta charset="UTF-8">
+<title>Feature graphic 1024x500</title>
+<style>
+  @font-face {
+    font-family: 'Tajawal';
+    src: url('../../assets/fonts/Tajawal-Bold.ttf') format('truetype');
+    font-weight: 700;
+  }
+  @font-face {
+    font-family: 'Tajawal';
+    src: url('../../assets/fonts/Tajawal-Medium.ttf') format('truetype');
+    font-weight: 500;
+  }
+  * { margin: 0; padding: 0; box-sizing: border-box; }
+  html, body { width: 1024px; height: 500px; overflow: hidden; }
+  body {
+    display: flex; align-items: center; justify-content: space-between;
+    padding: 0 78px 0 64px;
+    background:
+      radial-gradient(120% 140% at 88% 12%, #2F3826 0%, transparent 58%),
+      linear-gradient(135deg, #20241A 0%, #161911 60%, #12140F 100%);
+    font-family: 'Tajawal', sans-serif;
+    color: #ECEFE1;
+  }
+  /* شريط زيتوني رفيع على الحافة السفلية */
+  body::after {
+    content: ''; position: fixed; inset: auto 0 0 0; height: 6px;
+    background: linear-gradient(90deg, #515E39, #7C8A57 45%, #A8BA82);
+  }
+  .text { max-width: 560px; }
+  h1 { font-size: 76px; font-weight: 700; line-height: 1.15; letter-spacing: -1px; }
+  .rule {
+    width: 92px; height: 5px; border-radius: 3px; margin: 22px 0 20px;
+    background: linear-gradient(90deg, #A8BA82, #7C8A57);
+  }
+  p { font-size: 29px; font-weight: 500; color: #B9BDAA; line-height: 1.6; }
+  .mark { width: 232px; flex: none; filter: drop-shadow(0 18px 34px rgba(0,0,0,.5)); }
+  .mark svg { width: 100%; height: auto; display: block; }
+</style>
+</head>
+<body>
+  <div class="text">
+    <h1>عصر الحداثة</h1>
+    <div class="rule"></div>
+    <p>إدارة المشاريع والحضور والتقارير<br>ومتابعة المواقع في مكان واحد</p>
+  </div>
+  <!-- نفس هندسة brand/logo_mark.svg، لكن بخط كريمي ليظهر على الخلفية الداكنة -->
+  <div class="mark">
+    <svg xmlns="http://www.w3.org/2000/svg" viewBox="93 15 214 375">
+      <defs>
+        <linearGradient id="oliveFace" x1="0" y1="0" x2="0.85" y2="1">
+          <stop offset="0%"   stop-color="#C3D2A0"/>
+          <stop offset="55%"  stop-color="#8C9B63"/>
+          <stop offset="100%" stop-color="#5D6B41"/>
+        </linearGradient>
+      </defs>
+      <path d="M 145 96 L 289 61 L 289 372 L 145 337 Z"
+            fill="none" stroke="#ECEFE1" stroke-width="12" stroke-linejoin="round"/>
+      <path fill-rule="evenodd" fill="url(#oliveFace)"
+            d="M 111 62 L 255 27 L 255 338 L 111 303 Z
+               M 151 190 L 215 174 L 215 328 L 151 313 Z"/>
+    </svg>
+  </div>
+</body>
+</html>

@@ -46,14 +46,17 @@ class EmployeeAttendanceEdit extends StatelessWidget {
                       message: 'لا توجد سجلات حضور لهذا الموظف.',
                       icon: Icons.event_busy),
                 ),
-                Padding(
-                  padding: const EdgeInsets.all(16),
-                  child: SizedBox(
-                    width: double.infinity,
-                    child: ElevatedButton.icon(
-                      onPressed: () => _dialog(context, fs),
-                      icon: const Icon(Icons.add),
-                      label: const Text('إضافة سجل يدوي'),
+                SafeArea(
+                  top: false,
+                  child: Padding(
+                    padding: const EdgeInsets.all(16),
+                    child: SizedBox(
+                      width: double.infinity,
+                      child: ElevatedButton.icon(
+                        onPressed: () => _dialog(context, fs),
+                        icon: const Icon(Icons.add),
+                        label: const Text('إضافة سجل يدوي'),
+                      ),
                     ),
                   ),
                 ),

@@ -4,11 +4,11 @@ import 'package:flutter/material.dart';
 import 'package:image_picker/image_picker.dart';
 
 import '../../core/theme.dart';
-import '../../models/app_notification.dart';
 import '../../models/app_user.dart';
 import '../../models/execution_report.dart';
 import '../../models/work_site.dart';
 import '../../services/firestore_service.dart';
+import '../../services/notifications.dart';
 import '../../services/storage_service.dart';
 import '../../widgets/ui.dart';
 
@@ -95,21 +95,14 @@ class _ReportFormState extends State<ReportForm> {
         customerUid: widget.site.customerUid,
       ));
       // إشعار بتقرير جديد موجّه لزبون الموقع (والإدارة ترى الكل) — T-4.5.
-      // لا نُنشئ إشعاراً بلا مستلِم إن لم يكن الموقع مربوطاً بزبون.
-      final customerUid = widget.site.customerUid ?? '';
-      if (customerUid.isNotEmpty) {
-        await _fs.addNotification(AppNotification(
-          id: '',
-          type: 'report',
-          title: 'تقرير تنفيذ جديد',
-          body:
-              '${widget.executor.name} أضاف تقريراً لموقع ${widget.site.ownerName}',
-          fromUid: widget.executor.uid,
-          fromName: widget.executor.name,
-          toUid: customerUid,
-          relatedId: widget.site.id,
-        ));
-      }
+      // نصّ الإشعار ومستلِمه محدّدان في services/notifications.dart.
+      await Notifications.newReport(
+        customerUid: widget.site.customerUid ?? '',
+        siteOwnerName: widget.site.ownerName,
+        executorUid: widget.executor.uid,
+        executorName: widget.executor.name,
+        siteId: widget.site.id,
+      );
       if (mounted) {
         showSnack(context, 'تم حفظ التقرير ✓');
         Navigator.pop(context);

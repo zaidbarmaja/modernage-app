@@ -4,6 +4,7 @@ import '../../core/theme.dart';
 import '../../models/app_user.dart';
 import '../../models/design_project.dart';
 import '../../services/firestore_service.dart';
+import '../../services/notifications.dart';
 import '../../widgets/app_actions.dart';
 import '../../widgets/notifications_view.dart';
 import '../../widgets/project_card.dart';
@@ -45,8 +46,7 @@ class _DesignHomeState extends State<DesignHome> {
                 builder: (_) => Scaffold(
                   appBar: AppBar(title: const Text('الإشعارات')),
                   body: NotificationsView(
-                      stream: FirestoreService()
-                          .notificationsForUser(widget.user.uid)),
+                      stream: Notifications.streamFor(widget.user.uid)),
                 ),
               ),
             ),

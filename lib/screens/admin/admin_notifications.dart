@@ -2,7 +2,7 @@ import 'package:flutter/material.dart';
 
 import '../../core/theme.dart';
 import '../../models/app_user.dart';
-import '../../services/firestore_service.dart';
+import '../../services/notifications.dart';
 import '../../widgets/notifications_view.dart';
 import '../../widgets/ui.dart';
 
@@ -17,7 +17,6 @@ class AdminNotificationsScreen extends StatefulWidget {
 }
 
 class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
-  final _fs = FirestoreService();
   final _formKey = GlobalKey<FormState>();
   final _title = TextEditingController();
   final _body = TextEditingController();
@@ -54,7 +53,7 @@ class _AdminNotificationsScreenState extends State<AdminNotificationsScreen> {
     if (ok != true) return;
     setState(() => _busy = true);
     try {
-      final n = await _fs.broadcastNotification(
+      final n = await Notifications.broadcast(
         title: _title.text.trim(),
         body: _body.text.trim(),
         fromUid: widget.admin.uid,

@@ -1,0 +1,22 @@
+<svg xmlns="http://www.w3.org/2000/svg" viewBox="93 15 214 375" width="214" height="375" role="img" aria-label="عصر الحداثة — الرمز">
+  <title>عصر الحداثة — الرمز</title>
+  <!--
+    الرمز وحده (بلا اسم) — للأيقونة والختم والعلامة المائية.
+    نفس هندسة brand/logo.template.svg تماماً؛ أي تعديل يجب أن يطبَّق عليهما معاً.
+    ملف متجهي بلا خطوط مضمّنة — يفتح ويكبر في أي برنامج.
+  -->
+  <defs>
+    <linearGradient id="oliveFace" x1="0" y1="0" x2="0.85" y2="1">
+      <stop offset="0%"   stop-color="#A8BA82"/>
+      <stop offset="55%"  stop-color="#7C8A57"/>
+      <stop offset="100%" stop-color="#515E39"/>
+    </linearGradient>
+  </defs>
+
+  <path d="M 145 96 L 289 61 L 289 372 L 145 337 Z"
+        fill="none" stroke="#515E39" stroke-width="12" stroke-linejoin="round"/>
+
+  <path fill-rule="evenodd" fill="url(#oliveFace)"
+        d="M 111 62 L 255 27 L 255 338 L 111 303 Z
+           M 151 190 L 215 174 L 215 328 L 151 313 Z"/>
+</svg>

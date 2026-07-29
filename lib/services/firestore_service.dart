@@ -3,7 +3,6 @@ import 'dart:async';
 import 'package:cloud_firestore/cloud_firestore.dart';
 
 import '../core/constants.dart';
-import '../models/app_notification.dart';
 import '../models/app_user.dart';
 import '../models/attendance.dart';
 import '../models/company_settings.dart';
@@ -12,7 +11,6 @@ import '../models/design_project.dart';
 import '../models/execution_report.dart';
 import '../models/expense.dart';
 import '../models/receipt.dart';
-import '../models/scheduled_reminder.dart';
 import '../models/site_checkin.dart';
 import '../models/work_site.dart';
 
@@ -215,14 +213,16 @@ class FirestoreService {
     return _col(FsCollections.attendance).doc(id).set(record.toMap());
   }
 
-  /// تسجيل خروج (تحديث سجل اليوم).
+  /// تسجيل خروج: يُغلق سجل يوم **الدخول** [recordDate] (لا يوم الخروج) كي يعمل
+  /// حتى لو تجاوز الانصراف منتصف الليل.
   Future<void> checkOut(
     String uid, {
+    required DateTime recordDate,
     required DateTime checkOutTime,
     double? lat,
     double? lng,
   }) {
-    final id = _attDocId(uid, checkOutTime);
+    final id = _attDocId(uid, recordDate);
     return _col(FsCollections.attendance).doc(id).update({
       'checkOut': Timestamp.fromDate(checkOutTime),
       'checkOutLat': lat,
@@ -630,60 +630,8 @@ class FirestoreService {
   }
 
   // ------------------------------ الإشعارات ------------------------------
-
-  Future<void> addNotification(AppNotification n) =>
-      _col(FsCollections.notifications).add(n.toMap());
-
-  /// المدير يرسل إشعاراً للجميع: يُنشأ إشعار موجّه لكل مستخدم (toUid=uid) دفعةً
-  /// واحدة، فيظهر لكلٍّ في تبويب إشعاراته. (يدعم حتى ~٥٠٠ مستخدم في الدفعة.)
-  Future<int> broadcastNotification({
-    required String title,
-    required String body,
-    required String fromUid,
-    required String fromName,
-  }) async {
-    final usersSnap = await _col(FsCollections.users).get();
-    final batch = _db.batch();
-    for (final doc in usersSnap.docs) {
-      final ref = _col(FsCollections.notifications).doc();
-      batch.set(
-        ref,
-        AppNotification(
-          id: '',
-          type: 'broadcast',
-          title: title,
-          body: body,
-          fromUid: fromUid,
-          fromName: fromName,
-          toUid: doc.id,
-        ).toMap(),
-      );
-    }
-    await batch.commit();
-    return usersSnap.docs.length;
-  }
-
-  /// كل الإشعارات (للوحة الإدارة — ترى كل شيء).
-  Stream<List<AppNotification>> notificationsStream() =>
-      _col(FsCollections.notifications).snapshots().map(_mapNotifications);
-
-  /// إشعارات موجّهة لمستخدم معيّن (الزبون يرى ما يخصّه فقط — T-4.5).
-  Stream<List<AppNotification>> notificationsForUser(String uid) =>
-      _col(FsCollections.notifications)
-          .where('toUid', isEqualTo: uid)
-          .snapshots()
-          .map(_mapNotifications);
-
-  List<AppNotification> _mapNotifications(
-      QuerySnapshot<Map<String, dynamic>> s) {
-    final list = s.docs.map(AppNotification.fromDoc).toList();
-    list.sort((a, b) => (b.createdAt ?? DateTime(2000))
-        .compareTo(a.createdAt ?? DateTime(2000)));
-    return list;
-  }
-
-  Future<void> markNotificationRead(String id) =>
-      _col(FsCollections.notifications).doc(id).update({'read': true});
+  //  كل ما يخصّ الإشعارات (إرسال/بثّ/جدولة/قراءة + رموز الأجهزة FCM) انتقل إلى
+  //  ملف واحد: services/notifications.dart — لا تُضِف إشعارات هنا.
 
   // --------------------------- إعدادات الشركة ---------------------------
 
@@ -698,26 +646,5 @@ class FirestoreService {
           .doc('company')
           .set(s.toMap(), SetOptions(merge: true));
 
-  // ------------------- رموز الإشعارات الفورية (FCM) -------------------
-
-  /// يحفظ رمز جهاز المستخدم (FCM token) في ملفه لإرسال الإشعارات الفورية إليه.
-  Future<void> saveFcmToken(String uid, String token) =>
-      _col(FsCollections.users).doc(uid).set({
-        'fcmTokens': FieldValue.arrayUnion([token]),
-      }, SetOptions(merge: true));
-
-  // ------------------- التنبيهات اليومية المجدولة -------------------
-
-  /// قراءة لمرّة واحدة للتنبيهات المجدولة (يديرها المدير من الداشبورد) — يستخدمها
-  /// التطبيق لجدولة إشعارات محلية على جهاز الموظف عند الدخول.
-  Future<List<ScheduledReminder>> scheduledRemindersOnce() async {
-    final snap = await _col(FsCollections.scheduledReminders).get();
-    final list = <ScheduledReminder>[];
-    for (final d in snap.docs) {
-      try {
-        list.add(ScheduledReminder.fromDoc(d));
-      } catch (_) {}
-    }
-    return list;
-  }
+  // رموز الأجهزة (FCM) والتنبيهات اليومية المجدولة → services/notifications.dart
 }
